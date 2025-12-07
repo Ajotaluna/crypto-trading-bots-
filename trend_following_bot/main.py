@@ -1,0 +1,270 @@
+"""
+Main Bot Logic
+Integrates Data, Patterns, and Execution.
+"""
+import asyncio
+import logging
+import sys
+from datetime import datetime
+
+# Local imports
+from config import config
+from market_data import MarketData
+from patterns import PatternDetector
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler("trend_bot.log")
+    ]
+)
+logger = logging.getLogger("TrendBot")
+
+import concurrent.futures
+
+class TrendBot:
+    def __init__(self, is_dry_run=True, api_key=None, api_secret=None):
+        self.market = MarketData(is_dry_run, api_key, api_secret)
+        self.detector = PatternDetector()
+        self.running = True
+        self.start_balance = 0.0
+        self.watchlist = {} # Symbol -> Score
+        self.executor = concurrent.futures.ProcessPoolExecutor(max_workers=4)
+
+    def __del__(self):
+        self.executor.shutdown(wait=False)
+        
+    async def start(self):
+        await self.market.initialize_balance()
+        self.start_balance = self.market.balance
+        
+        mode = "TEST (DRY RUN)" if self.market.is_dry_run else "PRODUCTION (REAL MONEY)"
+        logger.info(f">>> TREND FOLLOWING BOT V2 (REAL-TIME) STARTED [{mode}] <<<")
+        logger.info(f"Config: Score {config.MIN_SIGNAL_SCORE}+ | Hold {config.MIN_POSITION_TIME_SEC/3600}h-{config.MAX_POSITION_TIME_SEC/3600}h")
+        logger.info(f"Daily Target: {config.DAILY_PROFIT_TARGET_PCT}% (Stop at ${self.start_balance * (1 + config.DAILY_PROFIT_TARGET_PCT/100):.2f})")
+        
+        # Run loops concurrently
+        await asyncio.gather(
+            self.safety_loop(),
+            self.reporting_loop(),
+            self.slow_scan()
+        )
+        
+    async def safety_loop(self):
+        """REAL-TIME SAFETY: Monitors SL/TP & Exits (Every 5s)"""
+        logger.info("Started Safety Monitor...")
+        while self.running:
+            try:
+                # 1. Manage Open Positions (CRITICAL)
+                await self.manage_positions()
+                
+                await asyncio.sleep(config.SAFETY_CHECK_INTERVAL)
+                
+            except Exception as e:
+                logger.error(f"Safety Loop Error: {e}")
+                await asyncio.sleep(1)
+
+    async def reporting_loop(self):
+        """REPORTING LOOP: Logs Status Loop (Every 5m)"""
+        logger.info("Started Status Reporter...")
+        while self.running:
+            try:
+                # 0. Check Daily Profit
+                current_pnl_pct = ((self.market.balance - self.start_balance) / self.start_balance) * 100
+                
+                # Log Status
+                if self.market.positions:
+                    logger.info(f"--- STATUS REPORT (PnL: {current_pnl_pct:.2f}%) ---")
+                    for sym, pos in self.market.positions.items():
+                        curr_price = await self.market.get_current_price(sym)
+                        pnl = 0.0
+                        if curr_price > 0:
+                            entry = pos['entry_price']
+                            if pos['side'] == 'LONG':
+                                pnl = (curr_price - entry) / entry * 100
+                            else:
+                                pnl = (entry - curr_price) / entry * 100
+                        
+                        duration_min = (datetime.now() - pos['entry_time']).total_seconds() / 60
+                        logger.info(f"{sym} {pos['side']} | PnL: {pnl:.2f}% | Time: {duration_min:.1f}m")
+                else:
+                    logger.info(f"--- STATUS REPORT: No Open Positions (PnL: {current_pnl_pct:.2f}%) ---")
+
+                if current_pnl_pct >= config.DAILY_PROFIT_TARGET_PCT:
+                    logger.info(f"DAILY TARGET REACHED! PnL: +{current_pnl_pct:.2f}%")
+                    self.running = False
+                    break
+                
+                # Check Watchlist just in case (optional, low priority)
+                if len(self.market.positions) < config.MAX_OPEN_POSITIONS:
+                    await self.check_watchlist()
+                
+                await asyncio.sleep(config.MONITOR_INTERVAL)
+                
+            except Exception as e:
+                logger.error(f"Reporting Loop Error: {e}")
+                await asyncio.sleep(60)
+
+    async def slow_scan(self):
+        """BACKGROUND LOOP: Batch Scan & Fill (Every 60s)"""
+        logger.info("Started Batch Scanner...")
+        while self.running:
+            try:
+                # Only scan if we have empty slots
+                open_slots = config.MAX_OPEN_POSITIONS - len(self.market.positions)
+                
+                if open_slots > 0:
+                    logger.info(f"Scanning to fill {open_slots} slots...")
+                    await self.scan_and_fill_batch(open_slots)
+                else:
+                    logger.info("Slots full (10/10). Waiting for positions to close...")
+                
+                await asyncio.sleep(config.CHECK_INTERVAL)
+                
+            except Exception as e:
+                logger.error(f"Batch Loop Error: {e}")
+                await asyncio.sleep(5)
+
+    async def scan_and_fill_batch(self, slots_needed):
+        """Analyze market and pick TOP N candidates"""
+        symbols = await self.market.get_top_symbols(limit=None)
+        candidates = []
+        
+        # 1. Analyze ALL symbols first (Parallel CPU)
+        loop = asyncio.get_running_loop()
+        tasks = []
+        
+        for symbol in symbols:
+            if not self.running: break
+            if symbol in self.market.positions: continue
+            
+            # Get data (Non-blocking network)
+            df = await self.market.get_klines(symbol, interval=config.TIMEFRAME)
+            if df.empty: continue
+            
+            # Offload heavy analysis to Process Pool
+            tasks.append(
+                loop.run_in_executor(self.executor, self.detector.analyze, df)
+            )
+            candidates.append({'symbol': symbol, 'df': df}) # Keep ref to DF
+
+        if not tasks: return
+
+        # Wait for all analyses
+        results = await asyncio.gather(*tasks)
+        
+        # Merge results
+        final_candidates = []
+        for i, signal in enumerate(results):
+            if signal and signal['score'] >= config.MIN_SIGNAL_SCORE:
+                cand = candidates[i]
+                cand['signal'] = signal
+                cand['score'] = signal['score']
+                final_candidates.append(cand)
+
+        candidates = final_candidates # Replace with filtered list
+        
+        # 2. Sort by Score (Highest first)
+        candidates.sort(key=lambda x: x['score'], reverse=True)
+        
+        # 3. Pick Top N
+        top_picks = candidates[:slots_needed]
+        
+        if top_picks:
+            logger.info(f"Found {len(top_picks)} candidates. Executing batch...")
+            for pick in top_picks:
+                await self.execute_trade(pick['symbol'], pick['signal'], pick['df'])
+        else:
+            logger.info("No suitable candidates found this round.")
+
+    async def check_watchlist(self):
+        """
+        Legacy method kept for compatibility, but main focus is now Batch Scan.
+        We can still use this to monitor specific high-potential pairs if needed.
+        """
+        pass # Disabled for now to focus on Batch Strategy
+
+    async def execute_trade(self, symbol, signal, df):
+        amount = self.market.balance * (config.CAPITAL_PER_TRADE_PCT / 100)
+        price = df.iloc[-1]['close']
+        
+        # Calculate Dynamic TP/SL
+        sl, tp = self.detector.calculate_dynamic_levels(df, signal['direction'])
+        
+        # Fallback if dynamic calc fails (e.g. not enough data)
+        if not sl or not tp:
+            logger.warning(f"Dynamic TP/SL failed for {symbol}. Using fixed fallback.")
+            if signal['direction'] == 'LONG':
+                sl = price * (1 - config.STOP_LOSS_PCT/100)
+                tp = price * (1 + config.TAKE_PROFIT_PCT/100)
+            else:
+                sl = price * (1 + config.STOP_LOSS_PCT/100)
+                tp = price * (1 - config.TAKE_PROFIT_PCT/100)
+        
+        logger.info(f"OPENING {symbol} {signal['direction']} | Entry: {price:.4f} | SL: {sl:.4f} | TP: {tp:.4f}")
+        await self.market.open_position(symbol, signal['direction'], amount, sl, tp)
+
+    async def manage_positions(self):
+        """Real-time position management"""
+        for symbol, pos in list(self.market.positions.items()):
+            current_price = await self.market.get_current_price(symbol)
+            if current_price == 0: continue
+            
+            # Calculate duration
+            duration_sec = (datetime.now() - pos['entry_time']).total_seconds()
+            
+            # 1. Check Hard SL/TP (Instant)
+            # Calculate PnL (ROI)
+            pnl_pct = 0.0
+            if pos['side'] == 'LONG':
+                pnl_pct = (current_price - pos['entry_price']) / pos['entry_price']
+                if current_price <= pos['sl']:
+                    await self.market.close_position(symbol, "STOP LOSS")
+                    continue
+                if current_price >= pos['tp']:
+                    await self.market.close_position(symbol, "TAKE PROFIT")
+                    continue
+            else:
+                pnl_pct = (pos['entry_price'] - current_price) / pos['entry_price']
+                if current_price >= pos['sl']:
+                    await self.market.close_position(symbol, "STOP LOSS")
+                    continue
+                if current_price <= pos['tp']:
+                    await self.market.close_position(symbol, "TAKE PROFIT")
+                    continue
+            
+            # 1b. BREAKEVEN Logic (Stricter Risk)
+            # If profit > 1.5x Risk (approx 7.5% ROI at 5x), move SL to Entry
+            risk_pct = config.STOP_LOSS_PCT / 100
+            if pnl_pct > (risk_pct * 1.5) and not pos.get('breakeven', False):
+                pos['sl'] = pos['entry_price']
+                pos['breakeven'] = True
+                logger.info(f"MOVED SL TO BREAKEVEN for {symbol} (Profit > 1.5R)")
+
+            # 2. Check Major Resistance (REAL TIME PROTECTION)
+            # We check this frequently to exit BEFORE SL if hitting a wall
+            df = await self.market.get_klines(symbol, interval=config.TIMEFRAME, limit=100)
+            if not df.empty:
+                major_levels = self.detector.find_major_levels(df)
+                for level in major_levels:
+                    dist = abs(current_price - level) / current_price
+                    if dist < 0.005: # Within 0.5% (Very close)
+                        # Only exit if we are LOSING momentum or STUCK
+                        if self.detector.check_exhaustion(df, pos['side']):
+                            await self.market.close_position(symbol, f"MAJOR RESISTANCE @ {level:.2f}")
+                            break
+
+            # 3. Time Constraints
+            if duration_sec > config.MAX_POSITION_TIME_SEC:
+                await self.market.close_position(symbol, "MAX TIME LIMIT")
+                continue
+
+if __name__ == "__main__":
+    bot = TrendBot()
+    try:
+        asyncio.run(bot.start())
+    except KeyboardInterrupt:
+        print("Bot stopped.")
