@@ -21,6 +21,7 @@ class ScalpingBot:
         self.strategy = ScalperStrategy()
         self.running = True
         self.executor = concurrent.futures.ProcessPoolExecutor(max_workers=4)
+        self.start_balance = self.market.balance
 
     def __del__(self):
         self.executor.shutdown(wait=False)
@@ -28,7 +29,44 @@ class ScalpingBot:
     async def start(self):
         logger.info(">>> SCALPING BOT V2 STARTED <<<")
         logger.info(f"Fee Settings: Maker {config.CALC_FEE_MAKER*100}% | Taker {config.CALC_FEE_TAKER*100}%")
-        await asyncio.gather(self.fast_loop(), self.scan_loop())
+        await asyncio.gather(self.fast_loop(), self.scan_loop(), self.reporting_loop())
+        
+    async def reporting_loop(self):
+        """REPORTING LOOP: Logs Status Loop (Every 5m)"""
+        logger.info("Started Status Reporter...")
+        while self.running:
+            try:
+                # 0. Check Daily Profit
+                current_pnl_pct = ((self.market.balance - self.start_balance) / self.start_balance) * 100
+                
+                # Log Status
+                if self.market.positions:
+                    logger.info(f"--- STATUS REPORT (PnL: {current_pnl_pct:.2f}%) ---")
+                    for sym, pos in self.market.positions.items():
+                        curr_price = await self.market.get_current_price(sym)
+                        pnl = 0.0
+                        if curr_price > 0:
+                            entry = pos['entry_price']
+                            if pos['side'] == 'LONG':
+                                pnl = (curr_price - entry) / entry * 100
+                            else:
+                                pnl = (entry - curr_price) / entry * 100
+                        
+                        duration_min = (datetime.now() - pos['entry_time']).total_seconds() / 60
+                        logger.info(f"{sym} {pos['side']} | PnL: {pnl:.2f}% | Time: {duration_min:.1f}m")
+                else:
+                    logger.info(f"--- STATUS REPORT: No Open Positions (PnL: {current_pnl_pct:.2f}%) ---")
+
+                if current_pnl_pct >= config.DAILY_PROFIT_TARGET_PCT:
+                    logger.info(f"DAILY TARGET REACHED! PnL: +{current_pnl_pct:.2f}%")
+                    self.running = False
+                    break
+                
+                await asyncio.sleep(300) # 5 minutes
+                
+            except Exception as e:
+                logger.error(f"Reporting Loop Error: {e}")
+                await asyncio.sleep(60)
         
     async def fast_loop(self):
         """Sub-second monitor for exits"""

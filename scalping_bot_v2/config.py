@@ -21,6 +21,7 @@ class Config:
     LEVERAGE = 10                    # Higher leverage for scalping
     STOP_LOSS_ROI = -10.0            # -10% ROI (approx -1% price move at 10x)
     TAKE_PROFIT_ROI = 20.0           # +20% ROI (approx +2% price move at 10x)
+    DAILY_PROFIT_TARGET_PCT = 10.0   # Stop after 10% daily gain
     
     # Fee Structure (Binance Futures)
     FEE_MAKER = 0.0002              # 0.02% (VIP0) - Using conservative 0.05% for safety
