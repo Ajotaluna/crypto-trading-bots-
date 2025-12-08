@@ -8,8 +8,10 @@ class Config:
     STRATEGY_NAME = "TrendFollowing_V1"
     
     # Entry Criteria
-    MIN_SIGNAL_SCORE = 80.0          # High threshold for quality
-    REQUIRE_VOLUME_SURGE = True      # Volume must confirm move
+    import os
+    # If LOOSE_MODE is 'true', we lower the bar to see trades happen (Test/Debug)
+    MIN_SIGNAL_SCORE = 10.0 if os.getenv('LOOSE_MODE') == 'true' else 80.0
+    REQUIRE_VOLUME_SURGE = False if os.getenv('LOOSE_MODE') == 'true' else True      # Volume must confirm move
     MIN_VOLUME_MULTIPLIER = 2.0      # Current volume vs 20-period avg
     
     # Position Management

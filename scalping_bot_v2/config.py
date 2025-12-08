@@ -12,8 +12,10 @@ class Config:
     SCAN_INTERVAL = 10               # Scan market every 10s
     
     # Entry Criteria (Strict)
-    MIN_SCORE = 85.0                 # Very high precision required
-    MIN_VOL_MULTIPLIER = 3.0         # Huge volume spikes only
+    import os
+    # If LOOSE_MODE is 'true', lower score to 10.0 to force trades
+    MIN_SCORE = 10.0 if os.getenv('LOOSE_MODE') == 'true' else 85.0
+    MIN_VOL_MULTIPLIER = 1.1 if os.getenv('LOOSE_MODE') == 'true' else 3.0         # Huge volume spikes only
     
     # Risk Management (Tight)
     LEVERAGE = 10                    # Higher leverage for scalping
