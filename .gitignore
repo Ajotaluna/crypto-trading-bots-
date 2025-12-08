@@ -17,3 +17,7 @@ logs/
 
 # Local artifacts
 .gemini/
+
+# Sensitive Keys
+*.pem
+*.key
