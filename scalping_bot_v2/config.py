@@ -14,8 +14,8 @@ class Config:
     # Entry Criteria (Strict)
     import os
     # If LOOSE_MODE is 'true', lower score to 10.0 to force trades
-    MIN_SCORE = 10.0 if os.getenv('LOOSE_MODE') == 'true' else 85.0
-    MIN_VOL_MULTIPLIER = 1.1 if os.getenv('LOOSE_MODE') == 'true' else 3.0         # Huge volume spikes only
+    MIN_SCORE = 10.0 if os.getenv('LOOSE_MODE') == 'true' else 75.0
+    MIN_VOL_MULTIPLIER = 1.1 if os.getenv('LOOSE_MODE') == 'true' else 1.5         # 1.5x Volume Spike (Normal Breakout)
     
     # Risk Management (Tight)
     LEVERAGE = 10                    # Higher leverage for scalping

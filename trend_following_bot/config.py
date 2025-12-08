@@ -10,9 +10,10 @@ class Config:
     # Entry Criteria
     import os
     # If LOOSE_MODE is 'true', we lower the bar to see trades happen (Test/Debug)
-    MIN_SIGNAL_SCORE = 10.0 if os.getenv('LOOSE_MODE') == 'true' else 80.0
+    # If LOOSE_MODE is 'true', we lower the bar to see trades happen (Test/Debug)
+    MIN_SIGNAL_SCORE = 10.0 if os.getenv('LOOSE_MODE') == 'true' else 75.0
     REQUIRE_VOLUME_SURGE = False if os.getenv('LOOSE_MODE') == 'true' else True      # Volume must confirm move
-    MIN_VOLUME_MULTIPLIER = 2.0      # Current volume vs 20-period avg
+    MIN_VOLUME_MULTIPLIER = 1.2      # Current volume vs 20-period avg (1.2x is significant enough)
     
     # Position Management
     MIN_POSITION_TIME_SEC = 3600     # 1 Hour Minimum Hold (Enforced)
