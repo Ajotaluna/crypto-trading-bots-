@@ -146,7 +146,6 @@ class ScalpingBot:
                            pass # Too verbose to log failures
                         
                         if signal and signal['score'] >= config.MIN_SCORE:
-                        if signal and signal['score'] >= config.MIN_SCORE:
                             cand = scan_candidates[i]
                             # Execute
                             price = cand['df'].iloc[-1]['close']
