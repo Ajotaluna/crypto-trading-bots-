@@ -130,6 +130,7 @@ class ScalpingBot:
                         scan_candidates.append({'symbol': symbol, 'df': df})
                 
                 if scan_candidates:
+                    logger.info(f"Analyzing {len(scan_candidates)} candidates...")
                     # Run analyses
                     analysis_tasks = [
                         loop.run_in_executor(self.executor, self.strategy.analyze, c['df']) 
@@ -138,6 +139,13 @@ class ScalpingBot:
                     results = await asyncio.gather(*analysis_tasks)
                     
                     for i, signal in enumerate(results):
+                        sym = scan_candidates[i]['symbol']
+                        if signal:
+                           logger.info(f"Analyzed {sym}: Score {signal['score']}")
+                        else:
+                           pass # Too verbose to log failures
+                        
+                        if signal and signal['score'] >= config.MIN_SCORE:
                         if signal and signal['score'] >= config.MIN_SCORE:
                             cand = scan_candidates[i]
                             # Execute
