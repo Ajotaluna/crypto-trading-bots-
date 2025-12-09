@@ -8,12 +8,12 @@ class Config:
     STRATEGY_NAME = "TrendFollowing_V1"
     
     # Entry Criteria
+    # Entry Criteria (STRICT)
     import os
-    # If LOOSE_MODE is 'true', we lower the bar to see trades happen (Test/Debug)
-    # If LOOSE_MODE is 'true', we lower the bar to see trades happen (Test/Debug)
-    MIN_SIGNAL_SCORE = 10.0 if os.getenv('LOOSE_MODE') == 'true' else 75.0
-    REQUIRE_VOLUME_SURGE = False if os.getenv('LOOSE_MODE') == 'true' else True      # Volume must confirm move
-    MIN_VOLUME_MULTIPLIER = 1.2      # Current volume vs 20-period avg (1.2x is significant enough)
+    # LOOSE_MODE REMOVED - ONLY STRICT TRADING ALLOWED
+    MIN_SIGNAL_SCORE = 80.0          # Only High Quality Quality
+    REQUIRE_VOLUME_SURGE = True      # Mandatory Volume
+    MIN_VOLUME_MULTIPLIER = 1.5      # Significant surge needed
     
     # Position Management
     MIN_POSITION_TIME_SEC = 3600     # 1 Hour Minimum Hold (Enforced)

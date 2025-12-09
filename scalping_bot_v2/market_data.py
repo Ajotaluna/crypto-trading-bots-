@@ -116,7 +116,7 @@ class MarketData:
                 'symbol': symbol, 'side': side, 'entry_price': price, 'amount': qty,
                 'sl': sl, 'tp': tp, 'entry_time': datetime.now(), 'max_roi': -100
             }
-            logger.info(f"⚡ [MOCK SCALP] {side} {symbol} @ {price} | SL: {sl} | TP: {tp}")
+            logger.info(f"[MOCK SCALP] {side} {symbol} @ {price} | SL: {sl} | TP: {tp}")
         else:
             # Real execution logic (simplified for brevity, same as trend bot but faster)
             # ... (Safety checks would go here)

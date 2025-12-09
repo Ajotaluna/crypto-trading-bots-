@@ -39,6 +39,33 @@ class TechnicalAnalysis:
         
         # Volume MA
         df['vol_ma'] = df['volume'].rolling(window=20).mean()
+
+        # ADX (Average Directional Index) - Safe Mode
+        try:
+            df['tr'] = np.maximum(df['high'] - df['low'], 
+                                  np.maximum(abs(df['high'] - df['close'].shift(1)), 
+                                             abs(df['low'] - df['close'].shift(1))))
+            
+            df['dm_plus'] = np.where((df['high'] - df['high'].shift(1)) > (df['low'].shift(1) - df['low']), 
+                                     np.maximum(df['high'] - df['high'].shift(1), 0), 0)
+            df['dm_minus'] = np.where((df['low'].shift(1) - df['low']) > (df['high'] - df['high'].shift(1)), 
+                                      np.maximum(df['low'].shift(1) - df['low'], 0), 0)
+            
+            alpha = 1/14
+            df['tr_s'] = df['tr'].ewm(alpha=alpha, adjust=False).mean()
+            df['dm_plus_s'] = df['dm_plus'].ewm(alpha=alpha, adjust=False).mean()
+            df['dm_minus_s'] = df['dm_minus'].ewm(alpha=alpha, adjust=False).mean()
+            
+            denom = df['tr_s']
+            df['di_plus'] = np.where(denom != 0, (df['dm_plus_s'] / denom) * 100, 0)
+            df['di_minus'] = np.where(denom != 0, (df['dm_minus_s'] / denom) * 100, 0)
+            
+            dx_denom = df['di_plus'] + df['di_minus']
+            df['dx'] = np.where(dx_denom != 0, (abs(df['di_plus'] - df['di_minus']) / dx_denom) * 100, 0)
+            df['adx'] = df['dx'].ewm(alpha=alpha, adjust=False).mean()
+            df['adx'] = df['adx'].fillna(0)
+        except:
+            df['adx'] = 0
         
         return df
 
@@ -60,33 +87,35 @@ class PatternDetector:
         }
         
         # 1. BREAKOUT DETECTION
-        # Price breaks upper BB with volume
-        is_vol_surge = curr['volume'] > (curr['vol_ma'] * 2.0)
+        # Logic: Price breaks BB, Volume confirm, AND Trend is Strong (ADX>25)
+        is_vol_surge = curr['volume'] > (curr['vol_ma'] * 1.5)
+        is_trend_strong = curr['adx'] > 25
         
         if curr['close'] > curr['upper_bb'] and is_vol_surge:
-            # FILTER: Don't buy if RSI > 75 (Exhausted) or Price > 5% above EMA20 (Parabolic)
-            if curr['rsi'] > 75 or (curr['close'] > curr['ema_20'] * 1.05):
-                signal['score'] = 0 # Reject
-            else:
+            # STRICT CONFIRMATION:
+            # 1. Strong Trend (ADX > 25)
+            # 2. Bullish Alignment (Price > EMA20 > EMA50)
+            # 3. Not Exhausted (RSI < 75)
+            if is_trend_strong and (curr['close'] > curr['ema_20'] > curr['ema_50']) and (curr['rsi'] < 75):
                 signal['type'] = 'BREAKOUT'
                 signal['direction'] = 'LONG'
-                signal['score'] += 50
-                signal['reason'].append('BB Breakout + Volume')
-            
-            # Trend confirmation
-            if curr['ema_20'] > curr['ema_50']:
-                signal['score'] += 30
-                signal['reason'].append('Trend Aligned')
+                signal['score'] = 85 # High Base Score
+                signal['reason'].append(f'Strong Breakout (ADX {curr["adx"]:.1f})')
+            else:
+                signal['score'] = 0 # Reject weak setups
                 
         elif curr['close'] < curr['lower_bb'] and is_vol_surge:
-            # FILTER: Don't short if RSI < 25 (Oversold) or Price < 5% below EMA20
-            if curr['rsi'] < 25 or (curr['close'] < curr['ema_20'] * 0.95):
-                signal['score'] = 0 # Reject
-            else:
+            # STRICT SHORT:
+            # 1. Strong Trend (ADX > 25)
+            # 2. Bearish Alignment (Price < EMA20 < EMA50)
+            # 3. Not Oversold (RSI > 25)
+            if is_trend_strong and (curr['close'] < curr['ema_20'] < curr['ema_50']) and (curr['rsi'] > 25):
                 signal['type'] = 'BREAKOUT'
                 signal['direction'] = 'SHORT'
-                signal['score'] += 50
-                signal['reason'].append('BB Breakout + Volume')
+                signal['score'] = 85
+                signal['reason'].append(f'Strong Breakdown (ADX {curr["adx"]:.1f})')
+            else:
+                signal['score'] = 0
             
             if curr['ema_20'] < curr['ema_50']:
                 signal['score'] += 30
