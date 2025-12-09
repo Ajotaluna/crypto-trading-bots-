@@ -64,10 +64,14 @@ class PatternDetector:
         is_vol_surge = curr['volume'] > (curr['vol_ma'] * 2.0)
         
         if curr['close'] > curr['upper_bb'] and is_vol_surge:
-            signal['type'] = 'BREAKOUT'
-            signal['direction'] = 'LONG'
-            signal['score'] += 50
-            signal['reason'].append('BB Breakout + Volume')
+            # FILTER: Don't buy if RSI > 75 (Exhausted) or Price > 5% above EMA20 (Parabolic)
+            if curr['rsi'] > 75 or (curr['close'] > curr['ema_20'] * 1.05):
+                signal['score'] = 0 # Reject
+            else:
+                signal['type'] = 'BREAKOUT'
+                signal['direction'] = 'LONG'
+                signal['score'] += 50
+                signal['reason'].append('BB Breakout + Volume')
             
             # Trend confirmation
             if curr['ema_20'] > curr['ema_50']:
@@ -75,10 +79,14 @@ class PatternDetector:
                 signal['reason'].append('Trend Aligned')
                 
         elif curr['close'] < curr['lower_bb'] and is_vol_surge:
-            signal['type'] = 'BREAKOUT'
-            signal['direction'] = 'SHORT'
-            signal['score'] += 50
-            signal['reason'].append('BB Breakout + Volume')
+            # FILTER: Don't short if RSI < 25 (Oversold) or Price < 5% below EMA20
+            if curr['rsi'] < 25 or (curr['close'] < curr['ema_20'] * 0.95):
+                signal['score'] = 0 # Reject
+            else:
+                signal['type'] = 'BREAKOUT'
+                signal['direction'] = 'SHORT'
+                signal['score'] += 50
+                signal['reason'].append('BB Breakout + Volume')
             
             if curr['ema_20'] < curr['ema_50']:
                 signal['score'] += 30
