@@ -78,7 +78,7 @@ class MarketData:
         if self.is_dry_run:
             self.balance = 1000.0
         else:
-            res = self._signed_request('GET', '/fapi/v2/balance')
+            res = await self._signed_request('GET', '/fapi/v2/balance')
             if res:
                 for asset in res:
                     if asset['asset'] == 'USDT':
