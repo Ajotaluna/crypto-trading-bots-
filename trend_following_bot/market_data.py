@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 import requests
+from config import config
 
 logger = logging.getLogger("MarketData")
 
