@@ -23,14 +23,15 @@ class Config:
     DAILY_PROFIT_TARGET_PCT = 3.0    # Stop after 3% daily gain (Realistic)
     
     # Risk Management
-    # ROI Targets: SL -5% ROI, TP +20% ROI (at 5x Leverage)
+    # ROI Targets: SL -2.5% ROI, TP +20% ROI (at 5x Leverage)
+    # ROI Targets: SL -1.5% Price Move, TP +5% Price Move
     # Price Movement = ROI / Leverage
-    STOP_LOSS_PCT = 1.0              # 1% move * 5x lev = 5% Loss
+    STOP_LOSS_PCT = 1.5              # 1.5% move * 10x = 15% PnL ($0.22 loss). Gives breath.
     TAKE_PROFIT_PCT = 4.0            # 4% move * 5x lev = 20% Gain
     
-    MAX_OPEN_POSITIONS = 10          # Batch size of 10
-    CAPITAL_PER_TRADE_PCT = 10.0     # 10% per trade (to fit 10 trades)
-    LEVERAGE = 5                     # Fixed 5x Leverage
+    MAX_OPEN_POSITIONS = 3           # Max 3 trades at once
+    CAPITAL_PER_TRADE_PCT = 15.0     # 15% ($1.50) * 10x = $15.00 Position (Safe above min $5)
+    LEVERAGE = 10                    # 10x required to trade with small balance
     
     # Dynamic TP/SL Lookback
     LOOKBACK_WINDOW_SL = 20          # Recent Low/High for Stop Loss

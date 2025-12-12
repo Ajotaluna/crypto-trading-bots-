@@ -18,9 +18,9 @@ class Config:
     MIN_VOL_MULTIPLIER = 1.5         # 1.5x Volume Spike
     
     # Risk Management (Tight)
-    LEVERAGE = 10                    # Higher leverage for scalping
-    STOP_LOSS_ROI = -10.0            # -10% ROI (approx -1% price move at 10x)
-    TAKE_PROFIT_ROI = 20.0           # +20% ROI (approx +2% price move at 10x)
+    LEVERAGE = 10                    # 10x for Micro Account
+    STOP_LOSS_ROI = -15.0            # -15% PnL (1.5% price move)
+    TAKE_PROFIT_ROI = 30.0           # +30% PnL (3.0% price move)
     DAILY_PROFIT_TARGET_PCT = 3.0    # Stop after 3% daily gain (Realistic)
     
     # Fee Structure (Binance Futures)

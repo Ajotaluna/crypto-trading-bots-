@@ -235,9 +235,17 @@ class PatternDetector:
             else:
                 tp_price = recent_high
                 
-            # Safety: Ensure SL is below price
+            # Safety & Clamping: Ensure SL is below price but NOT too far
+            max_sl_dist = config.STOP_LOSS_PCT / 100
+            hard_sl_price = current_price * (1 - max_sl_dist)
+            
+            # If dynamic SL is too far down (risk > max), pull it up to hard SL
+            if sl_price < hard_sl_price:
+                sl_price = hard_sl_price
+                
+            # If dynamic SL is above current price (impossible), fix it
             if sl_price >= current_price:
-                sl_price = current_price * 0.99
+                sl_price = hard_sl_price
                 
         else: # SHORT
             # SL = Highest High of last N candles
@@ -251,8 +259,15 @@ class PatternDetector:
             else:
                 tp_price = recent_low
                 
-            # Safety: Ensure SL is above price
+            # Safety & Clamping for SHORT
+            max_sl_dist = config.STOP_LOSS_PCT / 100
+            hard_sl_price = current_price * (1 + max_sl_dist)
+            
+            # If dynamic SL is too high up (risk > max), pull it down
+            if sl_price > hard_sl_price:
+                sl_price = hard_sl_price
+                
             if sl_price <= current_price:
-                sl_price = current_price * 1.01
+                sl_price = hard_sl_price
                 
         return sl_price, tp_price
