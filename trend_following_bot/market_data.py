@@ -51,21 +51,32 @@ class MarketData:
                 if resp.status_code == 200:
                     data = resp.json()
                     for s in data['symbols']:
-                        # Save stepSize for each symbol
+                        # Save stepSize (Qty) and tickSize (Price) for each symbol
+                        q_step = 1.0
+                        p_tick = 0.01
                         for f in s['filters']:
                             if f['filterType'] == 'LOT_SIZE':
-                                self.exchange_info_cache[s['symbol']] = float(f['stepSize'])
-                                break
+                                q_step = float(f['stepSize'])
+                            elif f['filterType'] == 'PRICE_FILTER':
+                                p_tick = float(f['tickSize'])
+                        
+                        self.exchange_info_cache[s['symbol']] = {'q': q_step, 'p': p_tick}
             except Exception as e:
                 logger.error(f"Failed to fetch Exchange Info: {e}")
         
-        return self.exchange_info_cache.get(symbol, 1.0) # Default to 1.0 (Safe integer)
+        return self.exchange_info_cache.get(symbol, {'q': 1.0, 'p': 0.01})
 
     def _round_step_size(self, quantity, step_size):
         """Round quantity to nearest stepSize"""
         if step_size == 0: return quantity
         precision = int(round(-np.log10(step_size), 0))
         return float(round(quantity - (quantity % step_size), precision))
+
+    def _round_price(self, price, tick_size):
+        """Round price to nearest tickSize"""
+        if tick_size == 0: return price
+        precision = int(round(-np.log10(tick_size), 0))
+        return float(round(price - (price % tick_size), precision))
 
     async def _signed_request(self, method, endpoint, params=None):
         """Execute signed request for production (Non-Blocking)"""
@@ -87,20 +98,20 @@ class MarketData:
                 elif method == 'DELETE':
                     return requests.delete(url, headers=headers, params=params, timeout=5)
             except Exception as e:
-                logger.error(f"Request failed: {e}")
+                logger.error(f"Net Error: {e}")
                 return None
 
-        try:
-            resp = await loop.run_in_executor(None, _req)
-                
-            if resp and resp.status_code == 200:
+        resp = await loop.run_in_executor(None, _req)
+        
+        if resp:
+            try:
+                if resp.status_code != 200:
+                    logger.error(f"API Error {resp.status_code}: {resp.text}") # LOG FULL ERROR
+                    return None
                 return resp.json()
-            else:
-                if resp: logger.error(f"API Error {resp.status_code}: {resp.text}")
+            except Exception:
                 return None
-        except Exception as e:
-            logger.error(f"Executor failed: {e}")
-            return None
+        return None
 
     async def initialize_balance(self):
         """Get initial balance"""
@@ -220,7 +231,10 @@ class MarketData:
             side_param = 'BUY' if side == 'LONG' else 'SELL'
             
             # Dynamic Precision Rounding
-            step_size = await self._get_symbol_precision(symbol)
+            info = await self._get_symbol_precision(symbol) # Returns dict {'q': step, 'p': tick}
+            step_size = info['q']
+            tick_size = info['p']
+            
             qty_val = self._round_step_size(amount, step_size)
             qty = f"{qty_val}" # Auto format
             
@@ -244,12 +258,16 @@ class MarketData:
                     # Determine Exit Side
                     exit_side = 'SELL' if side == 'LONG' else 'BUY'
                     
+                    # Round SL/TP Prices
+                    sl_rounded = self._round_price(sl_price, tick_size)
+                    tp_rounded = self._round_price(tp_price, tick_size)
+                    
                     # 1. STOP LOSS
                     await self._signed_request('POST', '/fapi/v1/order', {
                         'symbol': symbol,
                         'side': exit_side,
                         'type': 'STOP_MARKET',
-                        'stopPrice': "{:.4f}".format(sl_price),
+                        'stopPrice': f"{sl_rounded}",
                         'closePosition': 'true' # Closes entire position
                     })
                     
@@ -258,7 +276,7 @@ class MarketData:
                         'symbol': symbol,
                         'side': exit_side,
                         'type': 'TAKE_PROFIT_MARKET',
-                        'stopPrice': "{:.4f}".format(tp_price),
+                        'stopPrice': f"{tp_rounded}",
                         'closePosition': 'true' # Closes entire position
                     })
                     logger.info(f"Protective Orders (Hard SL/TP) placed for {symbol}")
