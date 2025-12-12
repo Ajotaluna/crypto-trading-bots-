@@ -175,12 +175,12 @@ class MarketData:
             # 0. Enforce Safety Settings
             try:
                 # Set Leverage
-                self._signed_request('POST', '/fapi/v1/leverage', {
+                await self._signed_request('POST', '/fapi/v1/leverage', {
                     'symbol': symbol,
-                    'leverage': 5
+                    'leverage': config.LEVERAGE if hasattr(config, 'LEVERAGE') else 5
                 })
                 # Set Margin Type (ISOLATED)
-                self._signed_request('POST', '/fapi/v1/marginType', {
+                await self._signed_request('POST', '/fapi/v1/marginType', {
                     'symbol': symbol,
                     'marginType': 'ISOLATED'
                 })
@@ -192,14 +192,14 @@ class MarketData:
             # Adjust precision (simplified)
             qty = "{:.3f}".format(amount) 
             
-            order = self._signed_request('POST', '/fapi/v1/order', {
+            order = await self._signed_request('POST', '/fapi/v1/order', {
                 'symbol': symbol,
                 'side': side_param,
                 'type': 'MARKET',
                 'quantity': qty
             })
             
-            if order:
+            if order and not isinstance(order, list): # Check if valid dict
                 entry_price = float(order.get('avgPrice', price))
                 self.positions[symbol] = {
                     'symbol': symbol,
@@ -210,7 +210,7 @@ class MarketData:
                     'tp': tp_price,
                     'entry_time': datetime.now()
                 }
-                logger.info(f"[REAL] OPEN {side} {symbol} @ {entry_price} | Lev: 5x | SL: {sl_price:.4f} (-5% ROI) | TP: {tp_price:.4f} (+20% ROI)")
+                logger.info(f"[REAL] OPEN {side} {symbol} @ {entry_price} | Lev: {config.LEVERAGE if hasattr(config, 'LEVERAGE') else 5}x | SL: {sl_price:.4f} (-{config.STOP_LOSS_PCT}%) | TP: {tp_price:.4f}")
                 return self.positions[symbol]
             return None
 
@@ -238,7 +238,7 @@ class MarketData:
         else:
             # REAL CLOSE
             side_param = 'SELL' if pos['side'] == 'LONG' else 'BUY'
-            order = self._signed_request('POST', '/fapi/v1/order', {
+            order = await self._signed_request('POST', '/fapi/v1/order', {
                 'symbol': symbol,
                 'side': side_param,
                 'type': 'MARKET',
