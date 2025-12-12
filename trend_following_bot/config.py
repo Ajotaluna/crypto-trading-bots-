@@ -20,7 +20,7 @@ class Config:
     MAX_POSITION_TIME_SEC = 86400    # 24 Hours Maximum Hold
     
     # Profit Targets
-    DAILY_PROFIT_TARGET_PCT = 10.0   # Stop after 10% daily gain
+    DAILY_PROFIT_TARGET_PCT = 3.0    # Stop after 3% daily gain (Realistic)
     
     # Risk Management
     # ROI Targets: SL -5% ROI, TP +20% ROI (at 5x Leverage)

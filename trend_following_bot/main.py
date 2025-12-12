@@ -277,7 +277,12 @@ class TrendBot:
                 continue
 
 if __name__ == "__main__":
-    bot = TrendBot()
+    import os
+    dry_run = os.getenv('DRY_RUN', 'true').lower() == 'true'
+    api_key = os.getenv('API_KEY')
+    api_secret = os.getenv('API_SECRET')
+    
+    bot = TrendBot(is_dry_run=dry_run, api_key=api_key, api_secret=api_secret)
     try:
         asyncio.run(bot.start())
     except KeyboardInterrupt:

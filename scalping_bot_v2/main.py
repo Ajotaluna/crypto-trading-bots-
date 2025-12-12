@@ -16,8 +16,8 @@ import concurrent.futures
 from datetime import datetime
 
 class ScalpingBot:
-    def __init__(self):
-        self.market = MarketData()
+    def __init__(self, is_dry_run=True, api_key=None, api_secret=None):
+        self.market = MarketData(is_dry_run, api_key, api_secret)
         self.strategy = ScalperStrategy()
         self.running = True
         self.executor = concurrent.futures.ProcessPoolExecutor(max_workers=4)
@@ -212,7 +212,12 @@ class ScalpingBot:
             await asyncio.sleep(config.SCAN_INTERVAL)
 
 if __name__ == "__main__":
-    bot = ScalpingBot()
+    import os
+    dry_run = os.getenv('DRY_RUN', 'true').lower() == 'true'
+    api_key = os.getenv('API_KEY')
+    api_secret = os.getenv('API_SECRET')
+    
+    bot = ScalpingBot(is_dry_run=dry_run, api_key=api_key, api_secret=api_secret)
     try:
         asyncio.run(bot.start())
     except KeyboardInterrupt: pass
