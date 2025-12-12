@@ -24,6 +24,11 @@ class MarketData:
         self.api_secret = api_secret
         self.positions = {}
         self.balance = 1000.0
+        self.base_url = "https://fapi.binance.com"
+        
+        if not is_dry_run and (not api_key or not api_secret):
+            logger.warning("Production mode requested but missing keys! Reverting to Dry Run.")
+            self.is_dry_run = True
         
         # Cache for exchange info (Precision rules)
         self.exchange_info_cache = {}
