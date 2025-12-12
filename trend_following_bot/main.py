@@ -219,7 +219,9 @@ class TrendBot:
                 tp = price * (1 - config.TAKE_PROFIT_PCT/100)
         
         logger.info(f"OPENING {symbol} {signal['direction']} | Entry: {price:.4f} | SL: {sl:.4f} | TP: {tp:.4f}")
-        await self.market.open_position(symbol, signal['direction'], amount, sl, tp)
+        result = await self.market.open_position(symbol, signal['direction'], amount, sl, tp)
+        if not result:
+            logger.error(f"❌ EXECUTION FAILED for {symbol}. Check logs for details (Precision/Margin/API).")
 
     async def manage_positions(self):
         """Real-time position management"""

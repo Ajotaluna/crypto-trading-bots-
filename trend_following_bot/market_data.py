@@ -24,11 +24,9 @@ class MarketData:
         self.api_secret = api_secret
         self.positions = {}
         self.balance = 1000.0
-        self.base_url = "https://fapi.binance.com"
         
-        if not is_dry_run and (not api_key or not api_secret):
-            logger.warning("Production mode requested but missing keys! Reverting to Dry Run.")
-            self.is_dry_run = True
+        # Cache for exchange info (Precision rules)
+        self.exchange_info_cache = {}
 
     def _get_signature(self, params):
         """Generate HMAC SHA256 signature"""
@@ -38,6 +36,31 @@ class MarketData:
             query_string.encode('utf-8'),
             hashlib.sha256
         ).hexdigest()
+
+    async def _get_symbol_precision(self, symbol):
+        """Get quantity precision (stepSize) for symbol"""
+        if not self.exchange_info_cache:
+            try:
+                # Fetch fresh info
+                resp = requests.get(f"{self.base_url}/fapi/v1/exchangeInfo", timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for s in data['symbols']:
+                        # Save stepSize for each symbol
+                        for f in s['filters']:
+                            if f['filterType'] == 'LOT_SIZE':
+                                self.exchange_info_cache[s['symbol']] = float(f['stepSize'])
+                                break
+            except Exception as e:
+                logger.error(f"Failed to fetch Exchange Info: {e}")
+        
+        return self.exchange_info_cache.get(symbol, 1.0) # Default to 1.0 (Safe integer)
+
+    def _round_step_size(self, quantity, step_size):
+        """Round quantity to nearest stepSize"""
+        if step_size == 0: return quantity
+        precision = int(round(-np.log10(step_size), 0))
+        return float(round(quantity - (quantity % step_size), precision))
 
     async def _signed_request(self, method, endpoint, params=None):
         """Execute signed request for production (Non-Blocking)"""
@@ -190,9 +213,17 @@ class MarketData:
 
             # 1. Place Market Order
             side_param = 'BUY' if side == 'LONG' else 'SELL'
-            # Adjust precision (simplified)
-            qty = "{:.3f}".format(amount) 
             
+            # Dynamic Precision Rounding
+            step_size = await self._get_symbol_precision(symbol)
+            qty_val = self._round_step_size(amount, step_size)
+            qty = f"{qty_val}" # Auto format
+            
+            # Double check against min qty (optional but good)
+            if qty_val <= 0:
+                logger.error(f"Quantity {qty_val} too small for {symbol}")
+                return None
+
             order = await self._signed_request('POST', '/fapi/v1/order', {
                 'symbol': symbol,
                 'side': side_param,
@@ -202,6 +233,35 @@ class MarketData:
             
             if order and not isinstance(order, list): # Check if valid dict
                 entry_price = float(order.get('avgPrice', price))
+                
+                # --- PLACING HARD STOPS (SAFETY) ---
+                try:
+                    # Determine Exit Side
+                    exit_side = 'SELL' if side == 'LONG' else 'BUY'
+                    
+                    # 1. STOP LOSS
+                    await self._signed_request('POST', '/fapi/v1/order', {
+                        'symbol': symbol,
+                        'side': exit_side,
+                        'type': 'STOP_MARKET',
+                        'stopPrice': "{:.4f}".format(sl_price),
+                        'closePosition': 'true' # Closes entire position
+                    })
+                    
+                    # 2. TAKE PROFIT
+                    await self._signed_request('POST', '/fapi/v1/order', {
+                        'symbol': symbol,
+                        'side': exit_side,
+                        'type': 'TAKE_PROFIT_MARKET',
+                        'stopPrice': "{:.4f}".format(tp_price),
+                        'closePosition': 'true' # Closes entire position
+                    })
+                    logger.info(f"Protective Orders (Hard SL/TP) placed for {symbol}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to place Hard Stops for {symbol}: {e}")
+                    # Continue anyway, bot will manage soft stops
+                
                 self.positions[symbol] = {
                     'symbol': symbol,
                     'side': side,
