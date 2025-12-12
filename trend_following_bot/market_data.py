@@ -184,8 +184,8 @@ class MarketData:
                     'symbol': symbol,
                     'marginType': 'ISOLATED'
                 })
-            except Exception:
-                pass # Ignore if already set
+            except Exception as e:
+                logger.warning(f"Setup Warning (Lev/Margin): {e}") # Don't crash, but tell us why
 
             # 1. Place Market Order
             side_param = 'BUY' if side == 'LONG' else 'SELL'
