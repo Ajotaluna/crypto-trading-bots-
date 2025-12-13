@@ -202,7 +202,14 @@ class TrendBot:
         pass # Disabled for now to focus on Batch Strategy
 
     async def execute_trade(self, symbol, signal, df):
-        amount = self.market.balance * (config.CAPITAL_PER_TRADE_PCT / 100)
+        # Enforce Minimum Position Size (Binance usually requires 5-6 USDT)
+        calc_amount = self.market.balance * (config.CAPITAL_PER_TRADE_PCT / 100)
+        amount = max(calc_amount, 6.0) # Ensure at least 6 USDT
+        
+        # Check affordability
+        if amount > self.market.balance:
+            logger.warning(f"Insufficient funds for {symbol}. Need {amount}, have {self.market.balance}")
+            return
         price = df.iloc[-1]['close']
         
         # Calculate Dynamic TP/SL

@@ -207,6 +207,8 @@ class ScalpingBot:
                                 tp = price * (1 - (abs(config.TAKE_PROFIT_ROI) / config.LEVERAGE / 100))
                                 
                             amount = self.market.balance * (config.CAPITAL_PER_TRADE_PCT / 100)
+                            if amount < 6.0: amount = 6.0 # Force min size
+                            if amount > self.market.balance: continue # Skip if poor
                             await self.market.open_position(cand['symbol'], signal['direction'], amount, sl, tp)
 
             await asyncio.sleep(config.SCAN_INTERVAL)
