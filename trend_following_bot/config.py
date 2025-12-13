@@ -15,6 +15,10 @@ class Config:
     REQUIRE_VOLUME_SURGE = True      # Mandatory Volume
     MIN_VOLUME_MULTIPLIER = 1.5      # Significant surge needed
     
+    # Smart Entry (Confirmation)
+    SMART_ENTRY_ENABLED = True       # Wait for breakout before entering
+    CONFIRMATION_TIMEOUT_MINS = 15   # Expire signal if no breakout in 15m
+    
     # Position Management
     MIN_POSITION_TIME_SEC = 3600     # 1 Hour Minimum Hold (Enforced)
     MAX_POSITION_TIME_SEC = 86400    # 24 Hours Maximum Hold

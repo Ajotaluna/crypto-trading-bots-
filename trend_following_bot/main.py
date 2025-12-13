@@ -32,6 +32,7 @@ class TrendBot:
         self.running = True
         self.start_balance = 0.0
         self.watchlist = {} # Symbol -> Score
+        self.pending_entries = {} # Symbol -> {signal, df, time, trigger_price}
         self.executor = concurrent.futures.ProcessPoolExecutor(max_workers=4)
 
     def __del__(self):
@@ -50,6 +51,7 @@ class TrendBot:
         await asyncio.gather(
             self.safety_loop(),
             self.reporting_loop(),
+            self.confirmation_loop(),
             self.slow_scan()
         )
         
@@ -188,9 +190,12 @@ class TrendBot:
         top_picks = candidates[:slots_needed]
         
         if top_picks:
-            logger.info(f"Found {len(top_picks)} candidates. Executing batch...")
+            logger.info(f"Found {len(top_picks)} candidates. Processing...")
             for pick in top_picks:
-                await self.execute_trade(pick['symbol'], pick['signal'], pick['df'])
+                if config.SMART_ENTRY_ENABLED:
+                    await self.add_to_pending(pick['symbol'], pick['signal'], pick['df'])
+                else:
+                    await self.execute_trade(pick['symbol'], pick['signal'], pick['df'])
         else:
             logger.info("No suitable candidates found this round.")
 
@@ -200,6 +205,64 @@ class TrendBot:
         We can still use this to monitor specific high-potential pairs if needed.
         """
         pass # Disabled for now to focus on Batch Strategy
+
+    async def add_to_pending(self, symbol, signal, df):
+        """Queue trade for Smart Entry (Confirmation)"""
+        if symbol in self.market.positions or symbol in self.pending_entries: return
+        
+        # Calculate Trigger Price (Breakout of last candle high/low)
+        last_candle = df.iloc[-1]
+        trigger_price = 0.0
+        
+        if signal['direction'] == 'LONG':
+            trigger_price = last_candle['high']
+        else:
+            trigger_price = last_candle['low']
+            
+        self.pending_entries[symbol] = {
+            'symbol': symbol,
+            'signal': signal,
+            'df': df,
+            'queued_time': datetime.now(),
+            'trigger_price': trigger_price,
+            'direction': signal['direction']
+        }
+        logger.info(f"⏳ QUEUED {symbol} {signal['direction']} | Wait for break of {trigger_price:.4f}")
+
+    async def confirmation_loop(self):
+        """SMART ENTRY: Watches Pending Entries for Breakout"""
+        logger.info("Started Smart Entry Monitor...")
+        while self.running:
+            try:
+                # Iterate copy to allow modification
+                current_time = datetime.now()
+                for symbol, entry in list(self.pending_entries.items()):
+                    # check timeout
+                    if (current_time - entry['queued_time']).total_seconds() > (config.CONFIRMATION_TIMEOUT_MINS * 60):
+                        logger.info(f"🗑️ EXPIRED {symbol} - No breakout in {config.CONFIRMATION_TIMEOUT_MINS}m")
+                        del self.pending_entries[symbol]
+                        continue
+                        
+                    # Check Price
+                    price = await self.market.get_current_price(symbol)
+                    if price == 0: continue
+                    
+                    triggered = False
+                    if entry['direction'] == 'LONG':
+                        if price > entry['trigger_price']: triggered = True
+                    else:
+                        if price < entry['trigger_price']: triggered = True
+                        
+                    if triggered:
+                        logger.info(f"🚀 CONFIRMED {symbol} {entry['direction']} | Breakout {entry['trigger_price']:.4f}")
+                        # Execute
+                        await self.execute_trade(symbol, entry['signal'], entry['df'])
+                        del self.pending_entries[symbol]
+                        
+                await asyncio.sleep(2) # Check frequently (2s)
+            except Exception as e:
+                logger.error(f"Confirmation Loop Error: {e}")
+                await asyncio.sleep(5)
 
     async def execute_trade(self, symbol, signal, df):
         # Enforce Minimum Position Size (Binance usually requires 5-6 USDT)
