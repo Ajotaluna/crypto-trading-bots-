@@ -243,43 +243,67 @@ class TrendBot:
                         del self.pending_entries[symbol]
                         continue
                         
-                    # DYNAMIC TRIGGER UPDATE (Smart Entry V2)
-                    # We fetch just latest 5 candles to minimize load
-                    df_latest = await self.market.get_klines(symbol, interval=config.TIMEFRAME, limit=10)
+                    # DYNAMIC TRIGGER & VALIDATION (Smart Entry V3 - Sniper)
+                    # Fetch 50 candles for RSI calculation
+                    df_latest = await self.market.get_klines(symbol, interval=config.TIMEFRAME, limit=50)
                     if not df_latest.empty:
-                        # Update Trigger to recent High/Low (Trailing Entry)
-                        # We use last 3 completed candles + current
-                        recent_candles = df_latest.iloc[-4:]
+                        # 0. Helper for RSI
+                        def calc_rsi(series, period=14):
+                            delta = series.diff()
+                            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+                            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+                            rs = gain / loss
+                            return 100 - (100 / (1 + rs))
+
+                        # 1. Update Dynamic Trigger (Last 3 Candles High/Low)
+                        recent_candles = df_latest.iloc[-4:-1] # Exclude current candle to define "range"
                         
                         if entry['direction'] == 'LONG':
-                            # Trigger = Highest High of recent action
                             new_trigger = recent_candles['high'].max()
-                            # Use new trigger if it's LOWER (tighter) than initial, or just track market?
-                            # User said "modify order". Tracking market is best.
-                            # But we don't want to chase it UP. We want to chase it DOWN (better entry).
-                            # So for LONG, trigger should be min(old_trigger, new_trigger)? 
-                            # No, if price consolidates lower, the resistance lowers.
                             entry['trigger_price'] = new_trigger
                         else:
-                            # Trigger = Lowest Low
                             new_trigger = recent_candles['low'].min()
                             entry['trigger_price'] = new_trigger
 
-                    # Check Price
-                    price = await self.market.get_current_price(symbol)
-                    if price == 0: continue
-                    
-                    triggered = False
-                    if entry['direction'] == 'LONG':
-                        if price > entry['trigger_price']: triggered = True
-                    else:
-                        if price < entry['trigger_price']: triggered = True
+                        # 2. Check Breakout Conditions
+                        current_candle = df_latest.iloc[-1]
+                        current_price = current_candle['close']
+                        current_vol = current_candle['volume']
+                        avg_vol = df_latest['volume'].iloc[-21:-1].mean() # 20 period avg (excl current)
                         
-                    if triggered:
-                        logger.info(f"🚀 CONFIRMED {symbol} {entry['direction']} | Breakout {entry['trigger_price']:.4f}")
-                        # Execute
-                        await self.execute_trade(symbol, entry['signal'], entry['df'])
-                        del self.pending_entries[symbol]
+                        rsi_val = 50 # Default safe
+                        try:
+                            rsi_series = calc_rsi(df_latest['close'])
+                            rsi_val = rsi_series.iloc[-1]
+                        except: pass
+
+                        triggered = False
+                        reason = ""
+
+                        if entry['direction'] == 'LONG':
+                            # Price > Trigger + Buffer
+                            target = entry['trigger_price'] * (1 + config.CONFIRM_BUFFER_PCT/100)
+                            if current_price > target:
+                                # Validation
+                                if current_vol > (avg_vol * config.CONFIRM_VOLUME_FACTOR):
+                                    if rsi_val < config.CONFIRM_RSI_MAX:
+                                        triggered = True
+                                        reason = f"Price {current_price:.2f} > {target:.2f} | Vol {current_vol:.0f} > {avg_vol:.0f} | RSI {rsi_val:.1f}"
+                        else:
+                            # Price < Trigger - Buffer
+                            target = entry['trigger_price'] * (1 - config.CONFIRM_BUFFER_PCT/100)
+                            if current_price < target:
+                                # Validation
+                                if current_vol > (avg_vol * config.CONFIRM_VOLUME_FACTOR):
+                                    if rsi_val > config.CONFIRM_RSI_MIN:
+                                        triggered = True
+                                        reason = f"Price {current_price:.2f} < {target:.2f} | Vol {current_vol:.0f} > {avg_vol:.0f} | RSI {rsi_val:.1f}"
+                        
+                        if triggered:
+                            logger.info(f"🎯 SNIPER ENTRY {symbol} {entry['direction']} | {reason}")
+                            # Execute
+                            await self.execute_trade(symbol, entry['signal'], entry['df'])
+                            del self.pending_entries[symbol]
                         
                 await asyncio.sleep(2) # Check frequently (2s)
             except Exception as e:

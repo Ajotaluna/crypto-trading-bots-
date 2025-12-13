@@ -15,9 +15,15 @@ class Config:
     REQUIRE_VOLUME_SURGE = True      # Mandatory Volume
     MIN_VOLUME_MULTIPLIER = 1.5      # Significant surge needed
     
-    # Smart Entry (Confirmation)
+    # Smart Entry (Confirmation V3 - Sniper)
     SMART_ENTRY_ENABLED = True       # Wait for breakout before entering
-    CONFIRMATION_TIMEOUT_MINS = 45   # Extended listening time (Dynamic V2)
+    CONFIRMATION_TIMEOUT_MINS = 45   # Extended listening time
+    
+    # V3 Validation Params
+    CONFIRM_VOLUME_FACTOR = 1.2      # Volume must be 20% > Average
+    CONFIRM_BUFFER_PCT = 0.1         # Price must break trigger by 0.1% (Filter wicks)
+    CONFIRM_RSI_MAX = 75.0           # Long: Don't buy if RSI > 75 (Overbought)
+    CONFIRM_RSI_MIN = 25.0           # Short: Don't sell if RSI < 25 (Oversold)
     
     # Position Management
     MIN_POSITION_TIME_SEC = 3600     # 1 Hour Minimum Hold (Enforced)
