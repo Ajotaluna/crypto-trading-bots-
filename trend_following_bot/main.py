@@ -111,8 +111,13 @@ class TrendBot:
 
                 if current_pnl_pct >= config.DAILY_PROFIT_TARGET_PCT:
                     logger.info(f"DAILY TARGET REACHED! PnL: +{current_pnl_pct:.2f}%")
-                    self.running = False
-                    break
+                    # CONTINUOUS COMPOUNDING: Don't stop, just log.
+                    # self.running = False 
+                    # break
+                
+                # REFRESH BALANCE FOR COMPOUNDING
+                # We update balance here so the NEXT batch scan uses the new capital (Initial + Profit)
+                await self.market.initialize_balance()
                 
                 # Check Watchlist just in case (optional, low priority)
                 if len(self.market.positions) < config.MAX_OPEN_POSITIONS:
