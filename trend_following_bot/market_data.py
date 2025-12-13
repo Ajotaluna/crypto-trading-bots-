@@ -251,7 +251,9 @@ class MarketData:
             })
             
             if order and not isinstance(order, list): # Check if valid dict
-                entry_price = float(order.get('avgPrice', price))
+                # Handle avgPrice=0 from Binance (Market orders)
+                avg_price = float(order.get('avgPrice', 0.0))
+                entry_price = avg_price if avg_price > 0 else price
                 
                 # --- PLACING HARD STOPS (SAFETY) ---
                 try:
