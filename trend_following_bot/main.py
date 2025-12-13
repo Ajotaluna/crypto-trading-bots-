@@ -243,6 +243,28 @@ class TrendBot:
                         del self.pending_entries[symbol]
                         continue
                         
+                    # DYNAMIC TRIGGER UPDATE (Smart Entry V2)
+                    # We fetch just latest 5 candles to minimize load
+                    df_latest = await self.market.get_klines(symbol, interval=config.TIMEFRAME, limit=10)
+                    if not df_latest.empty:
+                        # Update Trigger to recent High/Low (Trailing Entry)
+                        # We use last 3 completed candles + current
+                        recent_candles = df_latest.iloc[-4:]
+                        
+                        if entry['direction'] == 'LONG':
+                            # Trigger = Highest High of recent action
+                            new_trigger = recent_candles['high'].max()
+                            # Use new trigger if it's LOWER (tighter) than initial, or just track market?
+                            # User said "modify order". Tracking market is best.
+                            # But we don't want to chase it UP. We want to chase it DOWN (better entry).
+                            # So for LONG, trigger should be min(old_trigger, new_trigger)? 
+                            # No, if price consolidates lower, the resistance lowers.
+                            entry['trigger_price'] = new_trigger
+                        else:
+                            # Trigger = Lowest Low
+                            new_trigger = recent_candles['low'].min()
+                            entry['trigger_price'] = new_trigger
+
                     # Check Price
                     price = await self.market.get_current_price(symbol)
                     if price == 0: continue

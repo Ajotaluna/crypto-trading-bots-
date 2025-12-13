@@ -17,7 +17,7 @@ class Config:
     
     # Smart Entry (Confirmation)
     SMART_ENTRY_ENABLED = True       # Wait for breakout before entering
-    CONFIRMATION_TIMEOUT_MINS = 15   # Expire signal if no breakout in 15m
+    CONFIRMATION_TIMEOUT_MINS = 45   # Extended listening time (Dynamic V2)
     
     # Position Management
     MIN_POSITION_TIME_SEC = 3600     # 1 Hour Minimum Hold (Enforced)
