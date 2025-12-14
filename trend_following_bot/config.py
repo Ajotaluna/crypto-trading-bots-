@@ -25,6 +25,13 @@ class Config:
     CONFIRM_RSI_MAX = 75.0           # Long: Don't buy if RSI > 75 (Overbought)
     CONFIRM_RSI_MIN = 25.0           # Short: Don't sell if RSI < 25 (Oversold)
     
+    # Stability Filters (Anti-Loss)
+    MIN_VOLUME_USDT = 50000000       # 50M Minimum Volume (Majors Only)
+    MAX_DAILY_CHANGE_PCT = 30.0      # Ignore coins that pumped > 30% (Too late)
+    MIN_DAILY_CHANGE_PCT = 1.0       # Ignore dead coins (< 1% move)
+    TREND_ALIGN_INTERVAL = '1h'      # Check 1H Trend Line
+    TREND_ALIGN_EMA = 200            # Daily Trend Indicator
+    
     # Position Management
     MIN_POSITION_TIME_SEC = 3600     # 1 Hour Minimum Hold (Enforced)
     MAX_POSITION_TIME_SEC = 86400    # 24 Hours Maximum Hold

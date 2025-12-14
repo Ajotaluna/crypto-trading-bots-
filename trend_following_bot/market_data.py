@@ -133,19 +133,37 @@ class MarketData:
             resp = requests.get(f"{self.base_url}/fapi/v1/ticker/24hr", timeout=5)
             if resp.status_code == 200:
                 data = resp.json()
-                # Filter USDT and sort by volume (Min vol 10M to avoid junk)
-                usdt_pairs = [x for x in data if x['symbol'].endswith('USDT') and float(x['quoteVolume']) > 10000000]
-                usdt_pairs.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
+                
+                # STABILITY FILTER V4:
+                # 1. Volume > 50M (Top Tier)
+                # 2. Change < 30% (Not Pumping)
+                # 3. Change > 1% (Not Dead)
+                valid_pairs = []
+                for x in data:
+                    if not x['symbol'].endswith('USDT'): continue
+                    
+                    try:
+                        vol = float(x['quoteVolume'])
+                        change = float(x['priceChangePercent'])
+                        
+                        if vol < config.MIN_VOLUME_USDT: continue
+                        if abs(change) > config.MAX_DAILY_CHANGE_PCT: continue # Too volatile
+                        if abs(change) < config.MIN_DAILY_CHANGE_PCT: continue # Dead
+                        
+                        valid_pairs.append(x)
+                    except: continue
+
+                valid_pairs.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
                 
                 if limit:
-                    return [x['symbol'] for x in usdt_pairs[:limit]]
+                    return [x['symbol'] for x in valid_pairs[:limit]]
                 else:
-                    return [x['symbol'] for x in usdt_pairs]
+                    return [x['symbol'] for x in valid_pairs]
         except Exception as e:
             logger.error(f"Failed to fetch symbols: {e}")
         
-        # Fallback
-        return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT']
+        # Fallback (Safe Majors)
+        return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT']
 
     async def get_klines(self, symbol, interval='15m', limit=100):
         """Fetch candlestick data (Non-Blocking)"""

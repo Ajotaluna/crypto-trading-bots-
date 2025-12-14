@@ -197,6 +197,27 @@ class TrendBot:
         if top_picks:
             logger.info(f"Found {len(top_picks)} candidates. Processing...")
             for pick in top_picks:
+                # STABILITY FILTER V4: 1H Trend Alignment
+                # Only take LONG if Price > EMA200(1H)
+                # Only take SHORT if Price < EMA200(1H)
+                try:
+                    df_1h = await self.market.get_klines(pick['symbol'], interval=config.TREND_ALIGN_INTERVAL, limit=config.TREND_ALIGN_EMA + 10)
+                    if not df_1h.empty and len(df_1h) > config.TREND_ALIGN_EMA:
+                        # Calculate EMA200 manually or using pandas (ta-lib might not be in main scope)
+                        ema_200 = df_1h['close'].ewm(span=config.TREND_ALIGN_EMA, adjust=False).mean().iloc[-1]
+                        current_price_1h = df_1h['close'].iloc[-1]
+                        
+                        direction = pick['signal']['direction']
+                        if direction == 'LONG' and current_price_1h < ema_200:
+                            logger.info(f"🚫 SKIPPED {pick['symbol']} LONG: Against 1H Trend (Price {current_price_1h:.2f} < EMA200 {ema_200:.2f})")
+                            continue
+                        if direction == 'SHORT' and current_price_1h > ema_200:
+                            logger.info(f"🚫 SKIPPED {pick['symbol']} SHORT: Against 1H Trend (Price {current_price_1h:.2f} > EMA200 {ema_200:.2f})")
+                            continue
+                except Exception as e:
+                    logger.error(f"Trend Alignment Check Error: {e}")
+                    continue # Skip if check fails (Safety first)
+
                 if config.SMART_ENTRY_ENABLED:
                     await self.add_to_pending(pick['symbol'], pick['signal'], pick['df'])
                 else:
