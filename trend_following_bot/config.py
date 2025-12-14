@@ -46,7 +46,7 @@ class Config:
     STOP_LOSS_PCT = 1.5              # 1.5% move * 10x = 15% PnL ($0.22 loss). Gives breath.
     TAKE_PROFIT_PCT = 4.0            # 4% move * 5x lev = 20% Gain
     
-    MAX_OPEN_POSITIONS = 3           # Max 3 trades at once
+    MAX_OPEN_POSITIONS = 10          # Expanded to 10 for Stress Testing
     CAPITAL_PER_TRADE_PCT = 15.0     # 15% ($1.50) * 10x = $15.00 Position (Safe above min $5)
     LEVERAGE = 10                    # 10x required to trade with small balance
     
