@@ -71,87 +71,115 @@ class TechnicalAnalysis:
 
 class PatternDetector:
     
-    def analyze(self, df):
-        """Analyze for signals"""
-        if len(df) < 50: return None
+    def analyze_daily_structure(self, df_daily):
+        """
+        THE HISTORIAN: Analyze 90-day Daily Context.
+        Returns: { 'trend': 'BULLISH'/'BEARISH'/'NEUTRAL', 'reason': ..., 'major_support': ..., 'major_resistance': ... }
+        """
+        if df_daily is None or len(df_daily) < 30:
+            return {'trend': 'NEUTRAL', 'reason': 'Insufficient Data'}
+            
+        # 1. EMAs on Daily
+        df_daily['ema_50'] = df_daily['close'].ewm(span=50, adjust=False).mean()
+        df_daily['ema_200'] = df_daily['close'].ewm(span=200, adjust=False).mean()
         
-        df = TechnicalAnalysis.calculate_indicators(df)
+        current = df_daily.iloc[-1]
+        
+        # 2. Identify Market Structure (High/Low of last 30 days)
+        last_30 = df_daily.iloc[-30:]
+        highest_high = last_30['high'].max()
+        lowest_low = last_30['low'].min()
+        
+        # 3. Determine Bias
+        trend = 'NEUTRAL'
+        reason = []
+        
+        # BULLISH BIAS: Price > EMA50 Daily AND (Price > EMA200 Daily)
+        if current['close'] > current['ema_50']:
+            trend = 'BULLISH'
+            reason.append("Price > Daily EMA50")
+        
+        # BEARISH BIAS: Price < EMA50 Daily
+        elif current['close'] < current['ema_50']:
+            trend = 'BEARISH'
+            reason.append("Price < Daily EMA50")
+            
+        # 4. Major Levels (Support/Resistance)
+        levels = self.find_major_levels(df_daily)
+        
+        return {
+            'trend': trend,
+            'reason': ", ".join(reason),
+            'levels': levels,
+            'high_30d': highest_high,
+            'low_30d': lowest_low
+        }
+
+    def analyze(self, df_15m, df_daily=None):
+        """Analyze for signals with Historical Context"""
+        if len(df_15m) < 50: return None
+        
+        # 1. GET HISTORICAL CONTEXT
+        context = {'trend': 'NEUTRAL'}
+        if df_daily is not None:
+             context = self.analyze_daily_structure(df_daily)
+        
+        df = TechnicalAnalysis.calculate_indicators(df_15m)
         curr = df.iloc[-1]
-        prev = df.iloc[-2]
         
         signal = {
             'type': None,
             'score': 0,
             'direction': None,
-            'reason': []
+            'reason': [],
+            'context': context
         }
         
-        # 1. BREAKOUT DETECTION
-        # Logic: Price breaks BB, Volume confirm, AND Trend is Strong (ADX>25)
+        # 2. STRICT TREND FILTER ( The Historian )
+        # If Daily says BEARISH, we FORBID Longs.
+        # If Daily says BULLISH, we FORBID Shorts.
+        allowed_direction = 'BOTH'
+        if context['trend'] == 'BULLISH': allowed_direction = 'LONG'
+        if context['trend'] == 'BEARISH': allowed_direction = 'SHORT'
+        
+        # 3. BREAKOUT DETECTION (15m) matching Macro Trend
         is_vol_surge = curr['volume'] > (curr['vol_ma'] * 1.5)
         is_trend_strong = curr['adx'] > 25
         
-        if curr['close'] > curr['upper_bb'] and is_vol_surge:
-            # STRICT CONFIRMATION:
-            # 1. Strong Trend (ADX > 25)
-            # 2. Bullish Alignment (Price > EMA20 > EMA50)
-            # 3. Not Exhausted (RSI < 75)
-            if is_trend_strong and (curr['close'] > curr['ema_20'] > curr['ema_50']) and (curr['rsi'] < 75):
-                signal['type'] = 'BREAKOUT'
-                signal['direction'] = 'LONG'
-                signal['score'] = 85 # High Base Score
-                signal['reason'].append(f'Strong Breakout (ADX {curr["adx"]:.1f})')
-            else:
-                signal['score'] = 0 # Reject weak setups
-                
-        elif curr['close'] < curr['lower_bb'] and is_vol_surge:
-            # STRICT SHORT:
-            # 1. Strong Trend (ADX > 25)
-            # 2. Bearish Alignment (Price < EMA20 < EMA50)
-            # 3. Not Oversold (RSI > 25)
-            if is_trend_strong and (curr['close'] < curr['ema_20'] < curr['ema_50']) and (curr['rsi'] > 25):
-                signal['type'] = 'BREAKOUT'
-                signal['direction'] = 'SHORT'
-                signal['score'] = 85
-                signal['reason'].append(f'Strong Breakdown (ADX {curr["adx"]:.1f})')
-            else:
-                signal['score'] = 0
-            
-            if curr['ema_20'] < curr['ema_50']:
-                signal['score'] += 30
-                signal['reason'].append('Trend Aligned')
-
-        # 2. TREND REVERSAL (EMA Cross + MACD)
-        # Bullish Cross
-        if (prev['ema_20'] <= prev['ema_50']) and (curr['ema_20'] > curr['ema_50']):
-            if curr['hist'] > 0:
-                signal['type'] = 'REVERSAL'
-                signal['direction'] = 'LONG'
-                signal['score'] += 40
-                signal['reason'].append('EMA Golden Cross')
-                if curr['rsi'] > 50: signal['score'] += 20
-                
-        # Bearish Cross
-        elif (prev['ema_20'] >= prev['ema_50']) and (curr['ema_20'] < curr['ema_50']):
-            if curr['hist'] < 0:
-                signal['type'] = 'REVERSAL'
-                signal['direction'] = 'SHORT'
-                signal['score'] += 40
-                signal['reason'].append('EMA Death Cross')
-                if curr['rsi'] < 50: signal['score'] += 20
-
-        # 3. MAJOR RESISTANCE / SUPPORT CHECK
-        # We scan past 100 candles for levels hit 3+ times
-        major_levels = self.find_major_levels(df)
+        # LONG SETUP
+        if allowed_direction in ['LONG', 'BOTH']:
+            if curr['close'] > curr['upper_bb'] and is_vol_surge:
+                # Require ADX and Alignment
+                if is_trend_strong and (curr['close'] > curr['ema_20'] > curr['ema_50']):
+                    # Final Check: Not hitting Daily Resistance
+                    safe = True
+                    for level in context.get('levels', []):
+                        if level > curr['close'] and (level - curr['close']) / curr['close'] < 0.02:
+                            safe = False # Too close to resistance (<2%)
+                            
+                    if safe:
+                        signal['type'] = 'BREAKOUT'
+                        signal['direction'] = 'LONG'
+                        signal['score'] = 90
+                        signal['reason'].append(f'Macro {context["trend"]} + Breakout')
         
-        # If we are near a major level, REDUCE score (don't buy into resistance)
-        price = curr['close']
-        for level in major_levels:
-            if abs(price - level) / price < 0.01: # Within 1%
-                signal['score'] -= 50
-                signal['reason'].append('Near Major Level')
-        
-        return signal
+        # SHORT SETUP
+        if allowed_direction in ['SHORT', 'BOTH']:
+            if curr['close'] < curr['lower_bb'] and is_vol_surge:
+                if is_trend_strong and (curr['close'] < curr['ema_20'] < curr['ema_50']):
+                    # Final Check: Not hitting Daily Support
+                    safe = True
+                    for level in context.get('levels', []):
+                        if level < curr['close'] and (curr['close'] - level) / curr['close'] < 0.02:
+                            safe = False 
+                            
+                    if safe:
+                        signal['type'] = 'BREAKOUT'
+                        signal['direction'] = 'SHORT'
+                        signal['score'] = 90
+                        signal['reason'].append(f'Macro {context["trend"]} + Breakdown')
+
+        return signal if signal['score'] > 0 else None
 
     def find_major_levels(self, df, tolerance=0.01):
         """Find price levels tested 3+ times"""

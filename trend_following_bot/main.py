@@ -167,12 +167,17 @@ class TrendBot:
             if symbol in self.market.positions: continue
             
             # Get data (Non-blocking network)
+            # 1. Fetch Standard Timeframe (Scanning)
             df = await self.market.get_klines(symbol, interval=config.TIMEFRAME)
-            if df.empty: continue
+            
+            # 2. Fetch Historical Context (The Historian - 90 Days)
+            df_daily = await self.market.get_klines(symbol, interval='1d', limit=90)
+            
+            if df.empty or df_daily.empty: continue
             
             # Offload heavy analysis to Process Pool
             tasks.append(
-                loop.run_in_executor(self.executor, self.detector.analyze, df)
+                loop.run_in_executor(self.executor, self.detector.analyze, df, df_daily)
             )
             candidates.append({'symbol': symbol, 'df': df}) # Keep ref to DF
 
