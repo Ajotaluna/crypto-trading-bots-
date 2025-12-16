@@ -273,10 +273,14 @@ class TrendBot:
                         del self.pending_entries[symbol]
                         continue
                         
-                    # DYNAMIC TRIGGER & VALIDATION (Smart Entry V3 - Sniper)
-                    # Fetch 50 candles for RSI calculation
-                    df_latest = await self.market.get_klines(symbol, interval=config.TIMEFRAME, limit=50)
-                    if not df_latest.empty:
+                    # DYNAMIC TRIGGER & VALIDATION (Smart Entry V3 - Sniper - STRICT)
+                    # 1. Fetch Context (Standard Timeframe) for RSI/Trend
+                    df_context = await self.market.get_klines(symbol, interval=config.TIMEFRAME, limit=50)
+                    
+                    # 2. Fetch Confirmation Data (1m Candles) for TIMING
+                    df_1m = await self.market.get_klines(symbol, interval='1m', limit=25)
+                    
+                    if not df_context.empty and not df_1m.empty:
                         # 0. Helper for RSI
                         def calc_rsi(series, period=14):
                             delta = series.diff()
@@ -285,25 +289,28 @@ class TrendBot:
                             rs = gain / loss
                             return 100 - (100 / (1 + rs))
 
-                        # 1. Update Dynamic Trigger (Last 3 Candles High/Low)
-                        recent_candles = df_latest.iloc[-4:-1] # Exclude current candle to define "range"
-                        
+                        # 1. Update Dynamic Trigger (Last 3 Candles High/Low of CONTEXT)
+                        recent_candles = df_context.iloc[-4:-1] 
                         if entry['direction'] == 'LONG':
-                            new_trigger = recent_candles['high'].max()
-                            entry['trigger_price'] = new_trigger
+                            entry['trigger_price'] = recent_candles['high'].max()
                         else:
-                            new_trigger = recent_candles['low'].min()
-                            entry['trigger_price'] = new_trigger
+                            entry['trigger_price'] = recent_candles['low'].min()
 
                         # 2. Check Breakout Conditions
-                        current_candle = df_latest.iloc[-1]
-                        current_price = current_candle['close']
-                        current_vol = current_candle['volume']
-                        avg_vol = df_latest['volume'].iloc[-21:-1].mean() # 20 period avg (excl current)
+                        # Use 1m Closed Candle for CONFIRMATION (No Wicks!)
+                        # [-1] is massive open candle, [-2] is last CLOSED candle
+                        check_candle = df_1m.iloc[-2] if getattr(config, 'USE_1M_CONFIRMATION', True) else df_1m.iloc[-1]
                         
-                        rsi_val = 50 # Default safe
+                        current_close = check_candle['close']
+                        current_vol = check_candle['volume']
+                        
+                        # Avg Volume on 1m chart
+                        avg_vol_1m = df_1m['volume'].iloc[-22:-2].mean() 
+                        
+                        # Context RSI
+                        rsi_val = 50 
                         try:
-                            rsi_series = calc_rsi(df_latest['close'])
+                            rsi_series = calc_rsi(df_context['close'])
                             rsi_val = rsi_series.iloc[-1]
                         except: pass
 
@@ -313,21 +320,24 @@ class TrendBot:
                         if entry['direction'] == 'LONG':
                             # Price > Trigger + Buffer
                             target = entry['trigger_price'] * (1 + config.CONFIRM_BUFFER_PCT/100)
-                            if current_price > target:
+                            
+                            # LOGIC: Candle Must CLOSE above target
+                            if current_close > target:
                                 # Validation
-                                if current_vol > (avg_vol * config.CONFIRM_VOLUME_FACTOR):
+                                if current_vol > (avg_vol_1m * config.CONFIRM_VOLUME_FACTOR):
                                     if rsi_val < config.CONFIRM_RSI_MAX:
                                         triggered = True
-                                        reason = f"Price {current_price:.2f} > {target:.2f} | Vol {current_vol:.0f} > {avg_vol:.0f} | RSI {rsi_val:.1f}"
+                                        reason = f"1m Close {current_close:.2f} > {target:.2f} | Vol {current_vol:.0f} > {avg_vol_1m:.0f} | RSI {rsi_val:.1f}"
                         else:
                             # Price < Trigger - Buffer
                             target = entry['trigger_price'] * (1 - config.CONFIRM_BUFFER_PCT/100)
-                            if current_price < target:
+                            
+                            if current_close < target:
                                 # Validation
-                                if current_vol > (avg_vol * config.CONFIRM_VOLUME_FACTOR):
+                                if current_vol > (avg_vol_1m * config.CONFIRM_VOLUME_FACTOR):
                                     if rsi_val > config.CONFIRM_RSI_MIN:
                                         triggered = True
-                                        reason = f"Price {current_price:.2f} < {target:.2f} | Vol {current_vol:.0f} > {avg_vol:.0f} | RSI {rsi_val:.1f}"
+                                        reason = f"1m Close {current_close:.2f} < {target:.2f} | Vol {current_vol:.0f} > {avg_vol_1m:.0f} | RSI {rsi_val:.1f}"
                         
                         if triggered:
                             logger.info(f"🎯 SNIPER ENTRY {symbol} {entry['direction']} | {reason}")

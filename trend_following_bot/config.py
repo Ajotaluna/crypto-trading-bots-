@@ -20,10 +20,12 @@ class Config:
     CONFIRMATION_TIMEOUT_MINS = 45   # Extended listening time
     
     # V3 Validation Params
-    CONFIRM_VOLUME_FACTOR = 1.2      # Volume must be 20% > Average
-    CONFIRM_BUFFER_PCT = 0.1         # Price must break trigger by 0.1% (Filter wicks)
-    CONFIRM_RSI_MAX = 75.0           # Long: Don't buy if RSI > 75 (Overbought)
-    CONFIRM_RSI_MIN = 25.0           # Short: Don't sell if RSI < 25 (Oversold)
+    # V3 Validation Params
+    CONFIRM_VOLUME_FACTOR = 1.5      # Volume must be 50% > Average (Stricter)
+    CONFIRM_BUFFER_PCT = 0.4         # Price must break trigger by 0.4% (Reduce wick entries)
+    USE_1M_CONFIRMATION = True       # REQUIRE 1m Candle Close > Trigger (No instant tick entries)
+    CONFIRM_RSI_MAX = 70.0           # Long: Stricter Overbought Check
+    CONFIRM_RSI_MIN = 30.0           # Short: Stricter Oversold Check
     
     # Stability Filters (Anti-Loss)
     MIN_VOLUME_USDT = 50000000       # 50M Minimum Volume (Majors Only)
