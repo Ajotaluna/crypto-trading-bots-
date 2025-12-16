@@ -111,10 +111,10 @@ class TrendBot:
                         duration_min = (datetime.now() - pos['entry_time']).total_seconds() / 60
                         logger.info(f"{sym} {pos['side']} | PnL: {pnl:.2f}% | Time: {duration_min:.1f}m")
                 else:
-                    logger.info(f"--- STATUS REPORT: No Open Positions (PnL: {current_pnl_pct:.2f}%) ---")
+                    logger.info(f"--- STATUS REPORT: No Open Positions (PnL: {self.market.cumulative_pnl_daily*100:.2f}%) ---")
 
-                if current_pnl_pct >= config.DAILY_PROFIT_TARGET_PCT:
-                    logger.info(f"DAILY TARGET REACHED! PnL: +{current_pnl_pct:.2f}%")
+                if total_pnl_pct >= (config.DAILY_PROFIT_TARGET_PCT/100):
+                    logger.info(f"DAILY TARGET REACHED! PnL: +{total_pnl_pct*100:.2f}%")
                     # CONTINUOUS COMPOUNDING: Don't stop, just log.
                     # self.running = False 
                     # break
