@@ -32,6 +32,9 @@ class MarketData:
         
         # Cache for exchange info (Precision rules)
         self.exchange_info_cache = {}
+        
+        # Cumulative Daily PnL Tracker
+        self.cumulative_pnl_daily = 0.0
 
     def _get_signature(self, params):
         """Generate HMAC SHA256 signature"""
@@ -334,6 +337,9 @@ class MarketData:
                 
             pnl_usdt = (pos['amount'] * pos['entry_price']) * pnl_pct
             self.balance += (pos['amount'] * pos['entry_price']) + pnl_usdt
+            
+            # Cumulative Logic
+            self.cumulative_pnl_daily += pnl_pct
             
             duration = (datetime.now() - pos['entry_time']).total_seconds() / 60
             logger.info(f"[MOCK] CLOSE {symbol} @ {price} | {reason} | PnL: {pnl_pct*100:.2f}% (${pnl_usdt:.2f}) | Time: {duration:.0f}m")

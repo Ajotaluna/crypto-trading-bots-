@@ -74,26 +74,30 @@ class TrendBot:
         logger.info("Started Status Reporter...")
         while self.running:
             try:
-                # 0. Check Total Equity (Balance + PnL)
-                unrealized_pnl = 0.0
+                # 0. Check Total Equity (Balance + Unr PnL)
+                floating_pnl_pct = 0.0
+                unrealized_pnl_usdt = 0.0
+                
                 if self.market.positions:
                     for sym, pos in self.market.positions.items():
-                        # Estimate unrealized pnl roughly
                         curr_price = await self.market.get_current_price(sym)
                         if curr_price > 0:
                             entry = pos['entry_price']
-                            amt = pos['amount']
                             if pos['side'] == 'LONG':
-                                unrealized_pnl += (curr_price - entry) * amt
+                                pnl = (curr_price - entry) / entry
                             else:
-                                unrealized_pnl += (entry - curr_price) * amt
+                                pnl = (entry - curr_price) / entry
+                            
+                            pnl_val = (pos['amount'] * entry) * pnl
+                            unrealized_pnl_usdt += pnl_val
+                            floating_pnl_pct += pnl 
                 
-                total_equity = self.market.balance + unrealized_pnl
-                current_pnl_pct = ((total_equity - self.start_balance) / self.start_balance) * 100
+                total_pnl_pct = self.market.cumulative_pnl_daily + floating_pnl_pct
+                total_equity = self.market.balance + unrealized_pnl_usdt
                 
                 # Log Status
                 if self.market.positions:
-                    logger.info(f"--- STATUS REPORT (Total Equity: {total_equity:.2f} | PnL: {current_pnl_pct:.2f}%) ---")
+                    logger.info(f"--- STATUS REPORT (Total Equity: {total_equity:.2f} | PnL: {total_pnl_pct*100:.2f}%) ---")
                     for sym, pos in self.market.positions.items():
                         curr_price = await self.market.get_current_price(sym)
                         pnl = 0.0

@@ -36,28 +36,31 @@ class ScalpingBot:
         logger.info("Started Status Reporter...")
         while self.running:
             try:
-                # 0. Check Total Equity (Balance + PnL)
-                unrealized_pnl = 0.0
+                # 0. Check Total Equity (Balance + Unr PnL)
+                floating_pnl_pct = 0.0
+                unrealized_pnl_usdt = 0.0
+
                 if self.market.positions:
                     for sym, pos in self.market.positions.items():
-                        # Rough estimate for reporting
                         curr_price = await self.market.get_current_price(sym)
                         if curr_price > 0:
                             entry = pos['entry_price']
-                            # Assume 1 unit for pnl sizing approximation or use notional
-                            # For reporting pct, direction matters most
-                            qty = pos.get('amount', 0)
                             if pos['side'] == 'LONG':
-                                unrealized_pnl += (curr_price - entry) * qty
+                                pnl = (curr_price - entry) / entry
                             else:
-                                unrealized_pnl += (entry - curr_price) * qty
+                                pnl = (entry - curr_price) / entry
+                            
+                            # Approx floating PnL
+                            qty = pos.get('amount', 0)
+                            unrealized_pnl_usdt += (pnl * entry * qty)
+                            floating_pnl_pct += pnl
 
-                total_equity = self.market.balance + unrealized_pnl
-                current_pnl_pct = ((total_equity - self.start_balance) / self.start_balance) * 100
+                total_pnl_pct = self.market.cumulative_pnl_daily + floating_pnl_pct
+                total_equity = self.market.balance + unrealized_pnl_usdt
                 
                 # Log Status
                 if self.market.positions:
-                    logger.info(f"--- STATUS REPORT (Total Equity: {total_equity:.2f} | PnL: {current_pnl_pct:.2f}%) ---")
+                    logger.info(f"--- STATUS REPORT (Total Equity: {total_equity:.2f} | PnL: {total_pnl_pct*100:.2f}%) ---")
                     for sym, pos in self.market.positions.items():
                         curr_price = await self.market.get_current_price(sym)
                         pnl = 0.0
@@ -71,10 +74,10 @@ class ScalpingBot:
                         duration_min = (datetime.now() - pos['entry_time']).total_seconds() / 60
                         logger.info(f"{sym} {pos['side']} | PnL: {pnl:.2f}% | Time: {duration_min:.1f}m")
                 else:
-                    logger.info(f"--- STATUS REPORT: No Open Positions (PnL: {current_pnl_pct:.2f}%) ---")
+                    logger.info(f"--- STATUS REPORT: No Open Positions (PnL: {self.market.cumulative_pnl_daily*100:.2f}%) ---")
 
-                if current_pnl_pct >= config.DAILY_PROFIT_TARGET_PCT:
-                    logger.info(f"DAILY TARGET REACHED! PnL: +{current_pnl_pct:.2f}%")
+                if total_pnl_pct >= (config.DAILY_PROFIT_TARGET_PCT/100):
+                    logger.info(f"DAILY TARGET REACHED! PnL: +{total_pnl_pct*100:.2f}%")
                     self.running = False
                     break
                 

@@ -21,3 +21,6 @@ logs/
 # Sensitive Keys
 *.pem
 *.key
+
+#Dir
+FortressBot/

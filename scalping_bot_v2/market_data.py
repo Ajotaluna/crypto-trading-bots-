@@ -22,6 +22,7 @@ class MarketData:
         self.api_secret = api_secret
         self.positions = {}
         self.balance = 1000.0
+        self.cumulative_pnl_daily = 0.0
         self.base_url = "https://fapi.binance.com"
         
         if not is_dry_run and (not api_key or not api_secret):
@@ -129,6 +130,11 @@ class MarketData:
         
         net_pnl, fees = self.calculate_real_pnl(pos['entry_price'], price, pos['amount'], pos['side'])
         roi_pct = (net_pnl / (pos['amount'] * pos['entry_price'] / config.LEVERAGE)) * 100
+        
+        # Cumulative PnL Update
+        self.balance += net_pnl
+        pnl_pct_raw = (net_pnl / (pos['amount'] * pos['entry_price'])) 
+        self.cumulative_pnl_daily += pnl_pct_raw
         
         logger.info(f"💰 CLOSE {symbol} | {reason} | Net PnL: ${net_pnl:.2f} ({roi_pct:.2f}%) | Fees: ${fees:.2f}")
         del self.positions[symbol]
