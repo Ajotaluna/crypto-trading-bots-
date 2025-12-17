@@ -143,6 +143,10 @@ class PatternDetector:
         if context['trend'] == 'BEARISH': allowed_direction = 'SHORT'
         
         # 3. BREAKOUT DETECTION (15m) matching Macro Trend
+        # Calculate Volume Velocity (Speculative Bulla)
+        vol_velocity = curr['volume'] / (curr['vol_ma'] + 1) # +1 to avoid div by zero
+        is_vol_shock = vol_velocity > 3.0 # 300% Volume Spike
+        
         is_vol_surge = curr['volume'] > (curr['vol_ma'] * 1.5)
         is_trend_strong = curr['adx'] > 25
         
@@ -161,6 +165,10 @@ class PatternDetector:
                         signal['type'] = 'BREAKOUT'
                         signal['direction'] = 'LONG'
                         signal['score'] = 90
+                        if is_vol_shock:
+                            signal['score'] += 20 # SUPER BOOST
+                            signal['reason'].append(f'speculative BULLA (Vol {vol_velocity:.1f}x)')
+                        
                         signal['reason'].append(f'Macro {context["trend"]} + Breakout')
         
         # SHORT SETUP

@@ -198,15 +198,37 @@ class MarketData:
 
     async def get_current_price(self, symbol):
         """Get latest price"""
-        try:
-            url = f"{self.base_url}/fapi/v1/ticker/price"
-            params = {'symbol': symbol}
-            resp = requests.get(url, params=params, timeout=2)
-            if resp.status_code == 200:
-                return float(resp.json()['price'])
-        except Exception:
-            pass
+        tk = await self.get_klines(symbol, limit=1)
+        if not tk.empty:
+            return float(tk.iloc[-1]['close'])
         return 0.0
+
+    async def get_btc_trend(self):
+        """
+        THE KING'S GUARD: Check BTCUSDT Trend.
+        Returns: 'BULLISH', 'BEARISH', or 'NEUTRAL'
+        """
+        # 1. Check 15m (Immediate Danger)
+        df_15m = await self.get_klines('BTCUSDT', interval='15m', limit=50)
+        if df_15m.empty: return 'NEUTRAL' # Assume Check failed
+        
+        # Simple EMA calculation
+        df_15m['ema_20'] = df_15m['close'].ewm(span=20, adjust=False).mean()
+        current_15m = df_15m.iloc[-1]
+        
+        # DANGER: BTC dumping on 15m
+        if current_15m['close'] < current_15m['ema_20']:
+            return 'BEARISH'
+            
+        # 2. Check 1H (General Health)
+        df_1h = await self.get_klines('BTCUSDT', interval='1h', limit=50)
+        if not df_1h.empty:
+            df_1h['ema_20'] = df_1h['close'].ewm(span=20, adjust=False).mean()
+            current_1h = df_1h.iloc[-1]
+            if current_1h['close'] > current_1h['ema_20']:
+                return 'BULLISH'
+                
+        return 'NEUTRAL'
 
     # --- Execution Methods ---
     

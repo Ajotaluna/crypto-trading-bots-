@@ -11,6 +11,7 @@ from datetime import datetime
 from config import config
 from market_data import MarketData
 from patterns import PatternDetector
+from blacklist_manager import BlacklistManager
 
 # Setup logging
 logging.basicConfig(
@@ -29,6 +30,7 @@ class TrendBot:
     def __init__(self, is_dry_run=True, api_key=None, api_secret=None):
         self.market = MarketData(is_dry_run, api_key, api_secret)
         self.detector = PatternDetector()
+        self.blacklist = BlacklistManager()
         self.running = True
         self.start_balance = 0.0
         self.watchlist = {} # Symbol -> Score
@@ -155,6 +157,12 @@ class TrendBot:
 
     async def scan_and_fill_batch(self, slots_needed):
         """Analyze market and pick TOP N candidates"""
+        # 0. THE KING'S GUARD (BTC Trend Filter)
+        btc_trend = await self.market.get_btc_trend()
+        if btc_trend == 'BEARISH':
+            logger.warning("🛡️ KING'S GUARD: BTC is dumping/weak. Pausing Scans.")
+            return
+
         symbols = await self.market.get_top_symbols(limit=None)
         candidates = []
         
@@ -163,6 +171,9 @@ class TrendBot:
         tasks = []
         
         for symbol in symbols:
+            # Blacklist Check
+            if not self.blacklist.is_allowed(symbol):
+                continue
             if not self.running: break
             if symbol in self.market.positions: continue
             
@@ -399,6 +410,8 @@ class TrendBot:
             if pos['side'] == 'LONG':
                 pnl_pct = (current_price - pos['entry_price']) / pos['entry_price']
                 if current_price <= pos['sl']:
+                    logger.warning(f"🛑 STOP LOSS HIT: {symbol} at {current_price}")
+                    self.blacklist.record_loss(symbol) # Report Loss
                     await self.market.close_position(symbol, "STOP LOSS")
                     continue
                 if current_price >= pos['tp']:
@@ -407,6 +420,8 @@ class TrendBot:
             else:
                 pnl_pct = (pos['entry_price'] - current_price) / pos['entry_price']
                 if current_price >= pos['sl']:
+                    logger.warning(f"🛑 STOP LOSS HIT: {symbol} at {current_price}")
+                    self.blacklist.record_loss(symbol) # Report Loss
                     await self.market.close_position(symbol, "STOP LOSS")
                     continue
                 if current_price <= pos['tp']:
