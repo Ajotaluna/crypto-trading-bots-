@@ -466,6 +466,12 @@ class TrendBot:
                     
                     if not is_threat: continue
 
+                    # CRITICAL FIX: DO NOT CLOSE LOSING TRADES DUE TO RESISTANCE
+                    # We only alert/close if we are protecting profits.
+                    # If we are underwater, we rely on the Stop Loss.
+                    if pnl_pct <= 0:
+                        continue
+
                     dist = abs(current_price - level) / current_price
                     if dist < 0.005: # Within 0.5% (Very close)
                         # Only exit if we are LOSING momentum or STUCK

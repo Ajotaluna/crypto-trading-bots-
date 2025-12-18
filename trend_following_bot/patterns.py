@@ -94,15 +94,16 @@ class PatternDetector:
         trend = 'NEUTRAL'
         reason = []
         
-        # BULLISH BIAS: Price > EMA50 Daily AND (Price > EMA200 Daily)
-        if current['close'] > current['ema_50']:
+        # BULLISH BIAS: Strong Uptrend (Price > EMA50 AND Price > EMA200)
+        # This prevents buying "Rebounds" in a Bear Market.
+        if current['close'] > current['ema_50'] and current['close'] > current['ema_200']:
             trend = 'BULLISH'
-            reason.append("Price > Daily EMA50")
+            reason.append("Price > Daily EMA50 & EMA200")
         
-        # BEARISH BIAS: Price < EMA50 Daily
-        elif current['close'] < current['ema_50']:
+        # BEARISH BIAS: Strong Downtrend (Price < EMA50 AND Price < EMA200)
+        elif current['close'] < current['ema_50'] and current['close'] < current['ema_200']:
             trend = 'BEARISH'
-            reason.append("Price < Daily EMA50")
+            reason.append("Price < Daily EMA50 & EMA200")
             
         # 4. Major Levels (Support/Resistance)
         levels = self.find_major_levels(df_daily)
