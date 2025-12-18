@@ -159,9 +159,15 @@ class TrendBot:
         """Analyze market and pick TOP N candidates"""
         # 0. THE KING'S GUARD (BTC Trend Filter)
         btc_trend = await self.market.get_btc_trend()
-        if btc_trend == 'BEARISH':
-            logger.warning("🛡️ KING'S GUARD: BTC is dumping/weak. Pausing Scans.")
+        
+        if btc_trend == 'CRASH':
+            logger.warning("🛡️ KING'S GUARD: BTC IS CRASHING! Pausing Scans.")
             return
+
+        if btc_trend == 'BEARISH':
+            logger.info("🛡️ KING'S GUARD: BTC is Weak (Bearish). Scanning for SHORTS mainly.")
+        elif btc_trend == 'BULLISH':
+            logger.info("🛡️ KING'S GUARD: BTC is Strong (Bullish). Scanning for LONGS mainly.")
 
         symbols = await self.market.get_top_symbols(limit=None)
         candidates = []
@@ -271,7 +277,8 @@ class TrendBot:
             'df': df,
             'queued_time': datetime.now(),
             'trigger_price': trigger_price,
-            'direction': signal['direction']
+            'direction': signal['direction'],
+            'state': 'WAIT_BREAK' # V3 State Machine: WAIT_BREAK -> WAIT_RETEST -> EXECUTE
         }
         logger.info(f"⏳ QUEUED {symbol} {signal['direction']} | Wait for break of {trigger_price:.4f}")
 
@@ -289,78 +296,56 @@ class TrendBot:
                         del self.pending_entries[symbol]
                         continue
                         
-                    # DYNAMIC TRIGGER & VALIDATION (Smart Entry V3 - Sniper - STRICT)
-                    # 1. Fetch Context (Standard Timeframe) for RSI/Trend
-                    df_context = await self.market.get_klines(symbol, interval=config.TIMEFRAME, limit=50)
+                # DYNAMIC TRIGGER & VALIDATION (Smart Entry V3 - Ironclad)
+                    # State Machine: WAIT_BREAK -> WAIT_RETEST -> EXECUTE
                     
-                    # 2. Fetch Confirmation Data (1m Candles) for TIMING
+                    # 1m Candles for Precision
                     df_1m = await self.market.get_klines(symbol, interval='1m', limit=25)
+                    if df_1m.empty: continue
                     
-                    if not df_context.empty and not df_1m.empty:
-                        # 0. Helper for RSI
-                        def calc_rsi(series, period=14):
-                            delta = series.diff()
-                            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-                            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-                            rs = gain / loss
-                            return 100 - (100 / (1 + rs))
+                    last_candle = df_1m.iloc[-1] # Close of previous 1m candle (confirmed) or Current (Tick)? 
+                    # Use -1 (Current Tick) for Retest Touch, -2 (Closed) for Breakout Confirm
+                    closed_candle = df_1m.iloc[-2]
+                    current_price = float(last_candle['close'])
+                    
+                    trigger = entry['trigger_price']
+                    state = entry.get('state', 'WAIT_BREAK')
 
-                        # 1. Update Dynamic Trigger (Last 3 Candles High/Low of CONTEXT)
-                        recent_candles = df_context.iloc[-4:-1] 
+                    if state == 'WAIT_BREAK':
+                        # REQUIRE CLOSE BEYOND TRIGGER (Confirmed Breakout)
+                        breakout_confirmed = False
                         if entry['direction'] == 'LONG':
-                            entry['trigger_price'] = recent_candles['high'].max()
+                            if closed_candle['close'] > trigger:
+                                breakout_confirmed = True
                         else:
-                            entry['trigger_price'] = recent_candles['low'].min()
+                            if closed_candle['close'] < trigger:
+                                breakout_confirmed = True
+                                
+                        if breakout_confirmed:
+                            entry['state'] = 'WAIT_RETEST'
+                            logger.info(f"💥 BREAKOUT CONFIRMED for {symbol} @ {closed_candle['close']}! Waiting for Pullback to {trigger}...")
 
-                        # 2. Check Breakout Conditions
-                        # Use 1m Closed Candle for CONFIRMATION (No Wicks!)
-                        # [-1] is massive open candle, [-2] is last CLOSED candle
-                        check_candle = df_1m.iloc[-2] if getattr(config, 'USE_1M_CONFIRMATION', True) else df_1m.iloc[-1]
+                    elif state == 'WAIT_RETEST':
+                        # EXECUTE ON TOUCH (Limit Order style simulation)
+                        # We use 0.2% buffer to ensure we get filled near the level
+                        retest_success = False
                         
-                        current_close = check_candle['close']
-                        current_vol = check_candle['volume']
-                        
-                        # Avg Volume on 1m chart
-                        avg_vol_1m = df_1m['volume'].iloc[-22:-2].mean() 
-                        
-                        # Context RSI
-                        rsi_val = 50 
-                        try:
-                            rsi_series = calc_rsi(df_context['close'])
-                            rsi_val = rsi_series.iloc[-1]
-                        except: pass
-
-                        triggered = False
-                        reason = ""
-
                         if entry['direction'] == 'LONG':
-                            # Price > Trigger + Buffer
-                            target = entry['trigger_price'] * (1 + config.CONFIRM_BUFFER_PCT/100)
-                            
-                            # LOGIC: Candle Must CLOSE above target
-                            if current_close > target:
-                                # Validation
-                                if current_vol > (avg_vol_1m * config.CONFIRM_VOLUME_FACTOR):
-                                    if rsi_val < config.CONFIRM_RSI_MAX:
-                                        triggered = True
-                                        reason = f"1m Close {current_close:.2f} > {target:.2f} | Vol {current_vol:.0f} > {avg_vol_1m:.0f} | RSI {rsi_val:.1f}"
+                            # Price comes back DOWN to Trigger
+                            limit_buy = trigger * 1.002 # Buy just above support
+                            if float(last_candle['low']) <= limit_buy:
+                                retest_success = True
                         else:
-                            # Price < Trigger - Buffer
-                            target = entry['trigger_price'] * (1 - config.CONFIRM_BUFFER_PCT/100)
-                            
-                            if current_close < target:
-                                # Validation
-                                if current_vol > (avg_vol_1m * config.CONFIRM_VOLUME_FACTOR):
-                                    if rsi_val > config.CONFIRM_RSI_MIN:
-                                        triggered = True
-                                        reason = f"1m Close {current_close:.2f} < {target:.2f} | Vol {current_vol:.0f} > {avg_vol_1m:.0f} | RSI {rsi_val:.1f}"
-                        
-                        if triggered:
-                            logger.info(f"🎯 SNIPER ENTRY {symbol} {entry['direction']} | {reason}")
-                            # Execute
+                            # Price comes back UP to Trigger
+                            limit_sell = trigger * 0.998 # Sell just below resistance
+                            if float(last_candle['high']) >= limit_sell:
+                                retest_success = True
+                                
+                        if retest_success:
+                            logger.info(f"🎯 SNIPER ENTRY V3 {symbol} {entry['direction']} | Retest of {trigger} Successful!")
                             await self.execute_trade(symbol, entry['signal'], entry['df'])
                             del self.pending_entries[symbol]
-                        
+
                 await asyncio.sleep(2) # Check frequently (2s)
             except Exception as e:
                 logger.error(f"Confirmation Loop Error: {e}")
@@ -428,13 +413,38 @@ class TrendBot:
                     await self.market.close_position(symbol, "TAKE PROFIT")
                     continue
             
-            # 1b. BREAKEVEN Logic (Stricter Risk)
-            # If profit > 1.5x Risk (approx 7.5% ROI at 5x), move SL to Entry
-            risk_pct = config.STOP_LOSS_PCT / 100
-            if pnl_pct > (risk_pct * 1.5) and not pos.get('breakeven', False):
-                pos['sl'] = pos['entry_price']
-                pos['breakeven'] = True
-                logger.info(f"MOVED SL TO BREAKEVEN for {symbol} (Profit > 1.5R)")
+            # 1b. THE BLOODHOUND V3 (ATR Trailing Stop)
+            # Dynamic Stop Loss that tightens as we profit
+            try:
+                # Get ATR for current volatility
+                df_atr = await self.market.get_klines(symbol, interval=config.TIMEFRAME, limit=20)
+                if not df_atr.empty:
+                    current_atr = self.detector.calculate_atr(df_atr).iloc[-1]
+                    
+                    # Determine Trailing Distance based on ROI
+                    # < 1% Profit: Loose (3x ATR)
+                    # > 1% Profit: Tightening (2x ATR)
+                    # > 3% Profit: Sniper (1.5x ATR)
+                    multiplier = 3.0
+                    if pnl_pct > 0.03: multiplier = 1.5
+                    elif pnl_pct > 0.01: multiplier = 2.0
+                    
+                    trailing_dist = current_atr * multiplier
+                    
+                    if pos['side'] == 'LONG':
+                        new_sl = current_price - trailing_dist
+                        # ONLY MOVE UP
+                        if new_sl > pos['sl']:
+                            pos['sl'] = new_sl
+                            logger.info(f"🐕 BLOODHOUND: Trailed SL for {symbol} to {new_sl:.4f} (Price {current_price:.4f} | ATR {current_atr:.4f})")
+                    else:
+                        new_sl = current_price + trailing_dist
+                        # ONLY MOVE DOWN
+                        if new_sl < pos['sl']:
+                            pos['sl'] = new_sl
+                            logger.info(f"🐕 BLOODHOUND: Trailed SL for {symbol} to {new_sl:.4f} (Price {current_price:.4f} | ATR {current_atr:.4f})")
+            except Exception as e:
+                logger.error(f"Trailing Stop Error: {e}")
 
             # 2. Check Major Resistance (REAL TIME PROTECTION)
             # We check this frequently to exit BEFORE SL if hitting a wall
@@ -442,11 +452,26 @@ class TrendBot:
             if not df.empty:
                 major_levels = self.detector.find_major_levels(df)
                 for level in major_levels:
+                    # DISTINCTION: Support vs Resistance
+                    # LONG: We fear Resistance (Level > Price)
+                    # SHORT: We fear Support (Level < Price)
+                    
+                    is_threat = False
+                    if pos['side'] == 'LONG':
+                        if level > current_price: # Resistance above
+                            is_threat = True
+                    else:
+                        if level < current_price: # Support below
+                            is_threat = True
+                    
+                    if not is_threat: continue
+
                     dist = abs(current_price - level) / current_price
                     if dist < 0.005: # Within 0.5% (Very close)
                         # Only exit if we are LOSING momentum or STUCK
                         if self.detector.check_exhaustion(df, pos['side']):
-                            await self.market.close_position(symbol, f"MAJOR RESISTANCE @ {level:.2f}")
+                            type_str = "RESISTANCE" if pos['side'] == 'LONG' else "SUPPORT"
+                            await self.market.close_position(symbol, f"MAJOR {type_str} @ {level:.2f}")
                             break
 
             # 3. Time Constraints

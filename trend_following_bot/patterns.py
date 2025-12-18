@@ -213,6 +213,21 @@ class PatternDetector:
                 
         return major_levels
 
+    @staticmethod
+    def calculate_atr(df, period=14):
+        """Calculate Average True Range"""
+        high = df['high']
+        low = df['low']
+        close = df['close'].shift(1)
+        
+        tr1 = high - low
+        tr2 = (high - close).abs()
+        tr3 = (low - close).abs()
+        
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.rolling(window=period).mean()
+        return atr
+
     def check_exhaustion(self, df, position_side):
         """Check if trend is dying"""
         if len(df) < 50: return False

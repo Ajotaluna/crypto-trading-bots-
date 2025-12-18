@@ -206,7 +206,7 @@ class MarketData:
     async def get_btc_trend(self):
         """
         THE KING'S GUARD: Check BTCUSDT Trend.
-        Returns: 'BULLISH', 'BEARISH', or 'NEUTRAL'
+        Returns: 'BULLISH', 'BEARISH', 'CRASH', or 'NEUTRAL'
         """
         # 1. Check 15m (Immediate Danger)
         df_15m = await self.get_klines('BTCUSDT', interval='15m', limit=50)
@@ -216,7 +216,24 @@ class MarketData:
         df_15m['ema_20'] = df_15m['close'].ewm(span=20, adjust=False).mean()
         current_15m = df_15m.iloc[-1]
         
-        # DANGER: BTC dumping on 15m
+        # Calculate RSI for Crash Detection
+        delta = df_15m['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        current_rsi = rsi.iloc[-1]
+        
+        # Calculate % Drop in last candle
+        open_price = float(current_15m['open'])
+        close_price = float(current_15m['close'])
+        pct_change = (close_price - open_price) / open_price * 100
+        
+        # CRASH DETECTION: Drop > 1% in 15m OR RSI < 25 (Panic)
+        if pct_change < -1.0 or current_rsi < 25:
+             return 'CRASH'
+
+        # DANGER: BTC dumping on 15m (Standard Downtrend)
         if current_15m['close'] < current_15m['ema_20']:
             return 'BEARISH'
             
