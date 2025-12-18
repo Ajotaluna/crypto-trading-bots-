@@ -203,9 +203,62 @@ class MarketData:
             return float(tk.iloc[-1]['close'])
         return 0.0
 
+    async def get_open_interest(self, symbol, period='1h'):
+        """
+        Get Open Interest Statistics.
+        Returns: { 'sumOpenInterest': float, 'sumOpenInterestValue': float }
+        """
+        # Note: Binance API has distinct endpoints. For simple OI, we use openInterestHist
+        # But for real-time decision, 'openInterest' endpoint is better but limited.
+        # Let's use openInterestHist to see the TREND of OI.
+        url = f"{self.base_url}/fapi/v1/openInterestHist"
+        params = {'symbol': symbol, 'period': period, 'limit': 30}
+        
+        loop = asyncio.get_running_loop()
+        def _fetch():
+            try:
+                r = requests.get(url, params=params, timeout=5)
+                if r.status_code == 200: return r.json()
+            except: pass
+            return []
+            
+        data = await loop.run_in_executor(None, _fetch)
+        return data
+
+    async def get_top_long_short_ratio(self, symbol, period='1h'):
+        """Get Top Traders Long/Short Ratio (Accounts)"""
+        url = f"{self.base_url}/fapi/v1/topLongShortAccountRatio"
+        params = {'symbol': symbol, 'period': period, 'limit': 30}
+        
+        loop = asyncio.get_running_loop()
+        def _fetch():
+            try:
+                r = requests.get(url, params=params, timeout=5)
+                if r.status_code == 200: return r.json()
+            except: pass
+            return []
+            
+        return await loop.run_in_executor(None, _fetch)
+
+    async def get_global_long_short_ratio(self, symbol, period='1h'):
+        """Get Global Long/Short Ratio (The Crowd)"""
+        url = f"{self.base_url}/fapi/v1/globalLongShortAccountRatio"
+        params = {'symbol': symbol, 'period': period, 'limit': 30}
+        
+        loop = asyncio.get_running_loop()
+        def _fetch():
+            try:
+                r = requests.get(url, params=params, timeout=5)
+                if r.status_code == 200: return r.json()
+            except: pass
+            return []
+            
+        return await loop.run_in_executor(None, _fetch)
+
+    # --- CRASH DETECTION LOGIC MOVED TO SENTIMENT ANALYZER (Keep simple here) ---
     async def get_btc_trend(self):
         """
-        THE KING'S GUARD: Check BTCUSDT Trend.
+        Check BTCUSDT Trend (Legacy + Sentiment Wrapper needed in Main).
         Returns: 'BULLISH', 'BEARISH', 'CRASH', or 'NEUTRAL'
         """
         # 1. Check 15m (Immediate Danger)

@@ -5,6 +5,91 @@ Core logic for Trend Following: Breakouts, Reversals, Major Resistance.
 import pandas as pd
 import numpy as np
 
+class SentimentAnalyzer:
+    """
+    TITAN STRATEGY: Analyze Market Sentiment (OI, L/S Ratios)
+    """
+    @staticmethod
+    def analyze_sentiment(oi_data, top_ls_data, global_ls_data):
+        """
+        Analyze Sentiment Data.
+        Returns: { 'signal': 'BULLISH'/'BEARISH'/'NEUTRAL', 'score': 0-100, 'reason': ... }
+        """
+        if not oi_data or not top_ls_data:
+            return {'signal': 'NEUTRAL', 'score': 0, 'reason': 'No Data'}
+
+        # 1. Parse Open Interest Trend (Last 3 hours)
+        # We want to see if Money is entering or leaving
+        try:
+            oi_df = pd.DataFrame(oi_data)
+            oi_df['sumOpenInterestValue'] = pd.to_numeric(oi_df['sumOpenInterestValue'])
+            current_oi = oi_df.iloc[-1]['sumOpenInterestValue']
+            prev_oi = oi_df.iloc[0]['sumOpenInterestValue'] # 30 periods ago ~ 30 hours if 1h? Limit is 30.
+            
+            # Simple check over the fetched window
+            oi_change_pct = (current_oi - prev_oi) / prev_oi * 100
+        except:
+            oi_change_pct = 0
+
+        # 2. Parse Top Trader L/S Ratio (Whales)
+        try:
+            top_ls_df = pd.DataFrame(top_ls_data)
+            top_ls_df['longShortRatio'] = pd.to_numeric(top_ls_df['longShortRatio'])
+            current_top_ratio = top_ls_df.iloc[-1]['longShortRatio']
+        except:
+            current_top_ratio = 1.0
+
+        # 3. Parse Global L/S Ratio (Crowd) - Optional but good for contrarian
+        try:
+            global_ls_df = pd.DataFrame(global_ls_data)
+            global_ls_df['longShortRatio'] = pd.to_numeric(global_ls_df['longShortRatio'])
+            current_global_ratio = global_ls_df.iloc[-1]['longShortRatio']
+        except:
+            current_global_ratio = 1.0
+
+        # --- TITAN LOGIC ---
+        signal = 'NEUTRAL'
+        score = 50
+        reasons = []
+
+        # BULLISH SETUP
+        # Whales are Long (> 1.2) AND OI is increasing (Money backing the move)
+        if current_top_ratio > 1.2 and oi_change_pct > 0:
+            signal = 'BULLISH'
+            score = 80
+            reasons.append(f"Whales Long ({current_top_ratio:.2f})")
+            reasons.append(f"OI Rising (+{oi_change_pct:.1f}%)")
+            
+            # SQUEEZE BONUS: If Crowd is Short (< 0.8) while Whales are Long -> HUGE SQUEEZE POTENTIAL
+            if current_global_ratio < 0.9:
+                score += 15
+                reasons.append(f"Crowd Short ({current_global_ratio:.2f}) -> Squeeze Potential")
+
+        # BEARISH SETUP
+        # Whales are Short (< 0.8) AND OI is increasing
+        elif current_top_ratio < 0.8 and oi_change_pct > 0:
+            signal = 'BEARISH'
+            score = 80
+            reasons.append(f"Whales Short ({current_top_ratio:.2f})")
+            reasons.append(f"OI Rising (+{oi_change_pct:.1f}%)")
+            
+            # SQUEEZE BONUS: If Crowd is Long (> 1.2) while Whales are Short -> LONG SQUEEZE
+            if current_global_ratio > 1.1:
+                score += 15
+                reasons.append(f"Crowd Long ({current_global_ratio:.2f}) -> Long Squeeze Potential")
+
+        return {
+            'signal': signal,
+            'score': score,
+            'reason': ", ".join(reasons),
+            'metrics': {
+                'oi_change': oi_change_pct,
+                'top_ratio': current_top_ratio,
+                'global_ratio': current_global_ratio
+            }
+        }
+
+
 class TechnicalAnalysis:
     
     @staticmethod

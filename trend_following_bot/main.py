@@ -189,39 +189,62 @@ class TrendBot:
             
             # 2. Fetch Historical Context (The Historian - 90 Days)
             df_daily = await self.market.get_klines(symbol, interval='1d', limit=90)
+
+            # 3. TITAN DATA: Fetch Sentiment (OI, L/S Ratios)
+            oi_data = await self.market.get_open_interest(symbol, period='1h')
+            top_ls_data = await self.market.get_top_long_short_ratio(symbol, period='1h')
+            global_ls_data = await self.market.get_global_long_short_ratio(symbol, period='1h')
             
             if df.empty or df_daily.empty: continue
             
-            # Offload heavy analysis to Process Pool
-            tasks.append(
-                loop.run_in_executor(self.executor, self.detector.analyze, df, df_daily)
-            )
-            candidates.append({'symbol': symbol, 'df': df}) # Keep ref to DF
+            # 4. Analyze Technicals (Process Pool)
+            # We still need Technicals for Entry Timing (Breakout), even if Sentiment is King.
+            tech_signal_task = loop.run_in_executor(self.executor, self.detector.analyze, df, df_daily)
+            tech_signal = await tech_signal_task
+            
+            if not tech_signal or tech_signal['score'] < config.MIN_SIGNAL_SCORE:
+                continue
 
-        if not tasks: return
+            # 5. TITAN JUDGEMENT: Analyze Sentiment
+            sentiment = self.detector.SentimentAnalyzer.analyze_sentiment(oi_data, top_ls_data, global_ls_data)
+            
+            # LOGIC: Sentiment MUST match Technical Signal Direction
+            # If Technical says LONG, Sentiment must be BULLISH
+            # If Technical says SHORT, Sentiment must be BEARISH
+            
+            valid_titan = False
+            titan_reason = ""
+            
+            if tech_signal['direction'] == 'LONG' and sentiment['signal'] == 'BULLISH':
+                valid_titan = True
+                titan_reason = f"TITAN BULLISH: {sentiment['reason']}"
+                tech_signal['score'] += 20 # Resurrected score
+            elif tech_signal['direction'] == 'SHORT' and sentiment['signal'] == 'BEARISH':
+                valid_titan = True
+                titan_reason = f"TITAN BEARISH: {sentiment['reason']}"
+                tech_signal['score'] += 20
 
-        # Wait for all analyses
-        results = await asyncio.gather(*tasks)
-        
-        # Merge results
-        final_candidates = []
-        for i, signal in enumerate(results):
-            if signal and signal['score'] >= config.MIN_SIGNAL_SCORE:
-                cand = candidates[i]
-                cand['signal'] = signal
-                cand['score'] = signal['score']
-                final_candidates.append(cand)
+            if valid_titan:
+                logger.info(f"🔱 TITAN FOUND {symbol}: {titan_reason}")
+                final_candidates.append({
+                    'symbol': symbol,
+                    'df': df,
+                    'signal': tech_signal,
+                    'score': tech_signal['score']
+                })
+            else:
+                # Debug logging to see why we rejected
+                # logger.debug(f"Titan Rejected {symbol}: Tech {tech_signal['direction']} != Sent {sentiment['signal']}")
+                pass
 
-        candidates = final_candidates # Replace with filtered list
+        # Sort by Score (Highest first)
+        final_candidates.sort(key=lambda x: x['score'], reverse=True)
         
-        # 2. Sort by Score (Highest first)
-        candidates.sort(key=lambda x: x['score'], reverse=True)
-        
-        # 3. Pick Top N
-        top_picks = candidates[:slots_needed]
+        # Pick Top N
+        top_picks = final_candidates[:slots_needed]
         
         if top_picks:
-            logger.info(f"Found {len(top_picks)} candidates. Processing...")
+            logger.info(f"Found {len(top_picks)} Titan-Approved candidates. Processing...")
             for pick in top_picks:
                 # STABILITY FILTER V4: 1H Trend Alignment
                 # Only take LONG if Price > EMA200(1H)
@@ -229,7 +252,7 @@ class TrendBot:
                 try:
                     df_1h = await self.market.get_klines(pick['symbol'], interval=config.TREND_ALIGN_INTERVAL, limit=config.TREND_ALIGN_EMA + 10)
                     if not df_1h.empty and len(df_1h) > config.TREND_ALIGN_EMA:
-                        # Calculate EMA200 manually or using pandas (ta-lib might not be in main scope)
+                        # Calculate EMA200 manually 
                         ema_200 = df_1h['close'].ewm(span=config.TREND_ALIGN_EMA, adjust=False).mean().iloc[-1]
                         current_price_1h = df_1h['close'].iloc[-1]
                         
