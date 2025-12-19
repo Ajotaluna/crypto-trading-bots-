@@ -10,7 +10,7 @@ from datetime import datetime
 # Local imports
 from config import config
 from market_data import MarketData
-from patterns import PatternDetector
+from patterns import PatternDetector, SentimentAnalyzer
 from blacklist_manager import BlacklistManager
 
 # Setup logging
@@ -175,6 +175,7 @@ class TrendBot:
         # 1. Analyze ALL symbols first (Parallel CPU)
         loop = asyncio.get_running_loop()
         tasks = []
+        final_candidates = [] # TITAN: Accumulate here
         
         for symbol in symbols:
             # Blacklist Check
@@ -206,7 +207,7 @@ class TrendBot:
                 continue
 
             # 5. TITAN JUDGEMENT: Analyze Sentiment
-            sentiment = self.detector.SentimentAnalyzer.analyze_sentiment(oi_data, top_ls_data, global_ls_data)
+            sentiment = SentimentAnalyzer.analyze_sentiment(oi_data, top_ls_data, global_ls_data)
             
             # LOGIC: Sentiment MUST match Technical Signal Direction
             # If Technical says LONG, Sentiment must be BULLISH
