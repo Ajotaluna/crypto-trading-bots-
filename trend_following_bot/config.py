@@ -51,6 +51,7 @@ class Config:
     STOP_LOSS_PCT = 1.5              # Base Stop distance (will be dynamic)
     TAKE_PROFIT_PCT = 4.5            # 1:3 RR base expectation
     
+    MAX_OPEN_POSITIONS = 10          # Restore missing config
     CAPITAL_PER_TRADE_PCT = 0.0      # DEPRECATED in favor of Risk Sizing
     LEVERAGE = 10                    # 10x
     
