@@ -148,6 +148,9 @@ class TrendBot:
                     await self.scan_and_fill_batch(open_slots)
                 else:
                     logger.info("Slots full (10/10). Waiting for positions to close...")
+                    # IMPORTANT: Wait to prevent tight loop if full
+                    await asyncio.sleep(60) 
+                    continue # Skip the rest of loop to re-check
                 
                 await asyncio.sleep(config.CHECK_INTERVAL)
                 

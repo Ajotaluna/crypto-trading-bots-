@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from config import config
 
 logger = logging.getLogger("MarketData")
@@ -25,6 +27,16 @@ class MarketData:
         self.positions = {}
         self.balance = 1000.0
         self.base_url = "https://fapi.binance.com"
+        
+        # --- CONNECTION SHIELD (Anti-Disconnect) ---
+        self.session = requests.Session()
+        retries = Retry(
+            total=3,                # Retry 3 times
+            backoff_factor=0.5,     # Wait 0.5s, 1s, 2s
+            status_forcelist=[429, 500, 502, 503, 504], # Retry on Server Errors
+            allowed_methods=["GET", "POST", "DELETE"]    # Retry on these methods
+        )
+        self.session.mount('https://', HTTPAdapter(max_retries=retries))
         
         if not is_dry_run and (not api_key or not api_secret):
             logger.warning("Production mode requested but missing keys! Reverting to Dry Run.")
@@ -50,7 +62,7 @@ class MarketData:
         if not self.exchange_info_cache:
             try:
                 # Fetch fresh info
-                resp = requests.get(f"{self.base_url}/fapi/v1/exchangeInfo", timeout=5)
+                resp = self.session.get(f"{self.base_url}/fapi/v1/exchangeInfo", timeout=10)
                 if resp.status_code == 200:
                     data = resp.json()
                     for s in data['symbols']:
@@ -95,11 +107,11 @@ class MarketData:
         def _req():
             try:
                 if method == 'GET':
-                    return requests.get(url, headers=headers, params=params, timeout=5)
+                    return self.session.get(url, headers=headers, params=params, timeout=10)
                 elif method == 'POST':
-                    return requests.post(url, headers=headers, params=params, timeout=5)
+                    return self.session.post(url, headers=headers, params=params, timeout=10)
                 elif method == 'DELETE':
-                    return requests.delete(url, headers=headers, params=params, timeout=5)
+                    return self.session.delete(url, headers=headers, params=params, timeout=10)
             except Exception as e:
                 logger.error(f"Net Error: {e}")
                 return None
@@ -133,7 +145,7 @@ class MarketData:
         """Get top volume USDT pairs"""
         try:
             # Real API call for symbols to be realistic
-            resp = requests.get(f"{self.base_url}/fapi/v1/ticker/24hr", timeout=5)
+            resp = self.session.get(f"{self.base_url}/fapi/v1/ticker/24hr", timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
                 
@@ -177,7 +189,8 @@ class MarketData:
         
         def _fetch_and_parse():
             try:
-                resp = requests.get(url, params=params, timeout=5)
+                # Use Session for Retry
+                resp = self.session.get(url, params=params, timeout=10)
                 if resp.status_code == 200:
                     data = resp.json()
                     df = pd.DataFrame(data, columns=[
@@ -191,7 +204,9 @@ class MarketData:
                     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                     return df
             except Exception as e:
-                logger.error(f"Error fetching klines for {symbol}: {e}")
+                # Suppress error log for common network blips to keep log clean
+                if "Connection" not in str(e):
+                    logger.error(f"Error fetching klines for {symbol}: {e}")
             return pd.DataFrame()
 
         return await loop.run_in_executor(None, _fetch_and_parse)
@@ -217,7 +232,7 @@ class MarketData:
         loop = asyncio.get_running_loop()
         def _fetch():
             try:
-                r = requests.get(url, params=params, timeout=5)
+                r = self.session.get(url, params=params, timeout=10)
                 if r.status_code == 200: return r.json()
             except: pass
             return []
@@ -233,7 +248,7 @@ class MarketData:
         loop = asyncio.get_running_loop()
         def _fetch():
             try:
-                r = requests.get(url, params=params, timeout=5)
+                r = self.session.get(url, params=params, timeout=10)
                 if r.status_code == 200: return r.json()
             except: pass
             return []
@@ -248,7 +263,7 @@ class MarketData:
         loop = asyncio.get_running_loop()
         def _fetch():
             try:
-                r = requests.get(url, params=params, timeout=5)
+                r = self.session.get(url, params=params, timeout=10)
                 if r.status_code == 200: return r.json()
             except: pass
             return []
