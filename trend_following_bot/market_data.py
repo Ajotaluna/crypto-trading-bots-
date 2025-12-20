@@ -300,6 +300,40 @@ class MarketData:
                 
         return 'NEUTRAL'
 
+    def calculate_position_size(self, symbol, entry_price, sl_price):
+        """
+        THE RISK VAULT: Calculate Position Size based on Risk %.
+        Formula: Size = (Balance * Risk%) / Distance%
+        """
+        if entry_price <= 0 or sl_price <= 0: return 0.0
+        
+        # 1. Calculate Risk Amount (e.g. 1% of $1000 = $10)
+        risk_amount = self.balance * (config.RISK_PER_TRADE_PCT / 100)
+        
+        # 2. Calculate Stop Loss Distance %
+        dist_pct = abs(entry_price - sl_price) / entry_price
+        
+        if dist_pct == 0: return 0.0
+        
+        # 3. Calculate Position Size (Notional Value)
+        # $10 Risk / 0.05 Dist = $200 Position
+        position_size_usdt = risk_amount / dist_pct
+        
+        # 4. Apply Safety Caps
+        max_position_usdt = self.balance * (config.MAX_CAPITAL_PER_TRADE_PCT / 100) * config.LEVERAGE 
+        # Note: Max Cap is usually unleveraged % of balance, but here we cap the Notional.
+        # Let's cap the MARGIN used to 25% of balance.
+        # Margin Used = Position / Leverage
+        
+        max_margin = self.balance * (config.MAX_CAPITAL_PER_TRADE_PCT / 100)
+        max_allowed_notional = max_margin * config.LEVERAGE
+        
+        if position_size_usdt > max_allowed_notional:
+            logger.warning(f"⚠️ RISK VAULT: Capping Position for {symbol}. Needed {position_size_usdt:.2f} but capped at {max_allowed_notional:.2f}")
+            position_size_usdt = max_allowed_notional
+            
+        return position_size_usdt
+
     # --- Execution Methods ---
     
     async def open_position(self, symbol, side, amount_usdt, sl_price, tp_price):
@@ -413,12 +447,17 @@ class MarketData:
                 return self.positions[symbol]
             return None
 
-    async def close_position(self, symbol, reason):
+    async def close_position(self, symbol, reason, params=None):
         """Close position (Mock or Real)"""
         if symbol not in self.positions: return
+        if params is None: params = {}
         
         pos = self.positions[symbol]
         price = await self.get_current_price(symbol)
+        
+        # Determine quantity to close (Full or Partial)
+        qty_to_close = params.get('qty', pos['amount'])
+        is_partial = qty_to_close < pos['amount'] * 0.99
         
         if self.is_dry_run:
             # MOCK CLOSE
@@ -427,29 +466,41 @@ class MarketData:
             else:
                 pnl_pct = (pos['entry_price'] - price) / pos['entry_price']
                 
-            pnl_usdt = (pos['amount'] * pos['entry_price']) * pnl_pct
-            self.balance += (pos['amount'] * pos['entry_price']) + pnl_usdt
+            pnl_usdt = (qty_to_close * pos['entry_price']) * pnl_pct
             
-            # Cumulative Logic
-            self.cumulative_pnl_daily += pnl_pct
+            # Return Principal + PnL
+            # Note: In mock, we deducted full cost from balance.
+            # So we add back (Qty * Entry) + PnL
+            self.balance += (qty_to_close * pos['entry_price']) + pnl_usdt
             
-            duration = (datetime.now() - pos['entry_time']).total_seconds() / 60
-            logger.info(f"[MOCK] CLOSE {symbol} @ {price} | {reason} | PnL: {pnl_pct*100:.2f}% (${pnl_usdt:.2f}) | Time: {duration:.0f}m")
-            del self.positions[symbol]
+            # Update position record if partial
+            if is_partial:
+                pos['amount'] -= qty_to_close
+                logger.info(f"[MOCK] PARTIAL CLOSE {symbol} | Qty: {qty_to_close:.4f} | PnL: {pnl_pct*100:.2f}% (${pnl_usdt:.2f})")
+            else:
+                self.cumulative_pnl_daily += pnl_pct
+                duration = (datetime.now() - pos['entry_time']).total_seconds() / 60
+                logger.info(f"[MOCK] CLOSE {symbol} @ {price} | {reason} | PnL: {pnl_pct*100:.2f}% (${pnl_usdt:.2f}) | Time: {duration:.0f}m")
+                del self.positions[symbol]
             
         else:
             # REAL CLOSE
             side_param = 'SELL' if pos['side'] == 'LONG' else 'BUY'
+            
+            # ReduceOnly order
             order = await self._signed_request('POST', '/fapi/v1/order', {
                 'symbol': symbol,
                 'side': side_param,
                 'type': 'MARKET',
-                'quantity': pos['amount'],
+                'quantity': qty_to_close,
                 'reduceOnly': 'true'
             })
             
             if order:
-                # Update balance
                 await self.initialize_balance()
-                logger.info(f"[REAL] CLOSE {symbol} | {reason}")
-                del self.positions[symbol]
+                if is_partial:
+                     pos['amount'] -= qty_to_close
+                     logger.info(f"[REAL] PARTIAL CLOSE {symbol} | {reason}")
+                else:
+                    logger.info(f"[REAL] CLOSE {symbol} | {reason}")
+                    del self.positions[symbol]

@@ -376,20 +376,13 @@ class TrendBot:
                 await asyncio.sleep(5)
 
     async def execute_trade(self, symbol, signal, df):
-        # Enforce Minimum Position Size (Binance usually requires 5-6 USDT)
-        calc_amount = self.market.balance * (config.CAPITAL_PER_TRADE_PCT / 100)
-        amount = max(calc_amount, 6.0) # Ensure at least 6 USDT
-        
-        # Check affordability
-        if amount > self.market.balance:
-            logger.warning(f"Insufficient funds for {symbol}. Need {amount}, have {self.market.balance}")
-            return
+        # 1. GET PRICE
         price = df.iloc[-1]['close']
         
-        # Calculate Dynamic TP/SL
+        # 2. CALCULATE DYNAMIC SL/TP FIRST (Needed for Sizing)
         sl, tp = self.detector.calculate_dynamic_levels(df, signal['direction'])
         
-        # Fallback if dynamic calc fails (e.g. not enough data)
+        # Fallback if dynamic calc fails
         if not sl or not tp:
             logger.warning(f"Dynamic TP/SL failed for {symbol}. Using fixed fallback.")
             if signal['direction'] == 'LONG':
@@ -398,8 +391,23 @@ class TrendBot:
             else:
                 sl = price * (1 + config.STOP_LOSS_PCT/100)
                 tp = price * (1 - config.TAKE_PROFIT_PCT/100)
+
+        # 3. THE RISK VAULT: Calculate Position Size based on Risk
+        # We want to lose exactly RISK_PER_TRADE_PCT if SL is hit.
+        amount = self.market.calculate_position_size(symbol, price, sl)
         
-        logger.info(f"OPENING {symbol} {signal['direction']} | Entry: {price:.4f} | SL: {sl:.4f} | TP: {tp:.4f}")
+        if amount < 6.0:
+            logger.warning(f"⚠️ Position Size {amount:.2f} too small for {symbol} (Risk too low or SL too tight?). Skipping.")
+            return
+
+        # Check affordability (Margin)
+        margin_needed = amount / config.LEVERAGE
+        if margin_needed > self.market.balance:
+            logger.warning(f"Insufficient funds for {symbol}. Need Margin ${margin_needed:.2f}, have ${self.market.balance:.2f}")
+            # Optional: Resize to Max Balance? No, violates Risk Vault. Skip.
+            return
+        
+        logger.info(f"🔫 OPENING {symbol} {signal['direction']} | Size: ${amount:.2f} | Entry: {price:.4f} | SL: {sl:.4f} | TP: {tp:.4f}")
         result = await self.market.open_position(symbol, signal['direction'], amount, sl, tp)
         if not result:
             logger.error(f"❌ EXECUTION FAILED for {symbol}. Check logs for details (Precision/Margin/API).")
@@ -437,38 +445,80 @@ class TrendBot:
                     await self.market.close_position(symbol, "TAKE PROFIT")
                     continue
             
-            # 1b. THE BLOODHOUND V3 (ATR Trailing Stop)
-            # Dynamic Stop Loss that tightens as we profit
-            try:
-                # Get ATR for current volatility
-                df_atr = await self.market.get_klines(symbol, interval=config.TIMEFRAME, limit=20)
-                if not df_atr.empty:
-                    current_atr = self.detector.calculate_atr(df_atr).iloc[-1]
-                    
-                    # Determine Trailing Distance based on ROI
-                    # < 1% Profit: Loose (3x ATR)
-                    # > 1% Profit: Tightening (2x ATR)
-                    # > 3% Profit: Sniper (1.5x ATR)
-                    multiplier = 3.0
-                    if pnl_pct > 0.03: multiplier = 1.5
-                    elif pnl_pct > 0.01: multiplier = 2.0
-                    
-                    trailing_dist = current_atr * multiplier
-                    
-                    if pos['side'] == 'LONG':
-                        new_sl = current_price - trailing_dist
-                        # ONLY MOVE UP
-                        if new_sl > pos['sl']:
-                            pos['sl'] = new_sl
-                            logger.info(f"🐕 BLOODHOUND: Trailed SL for {symbol} to {new_sl:.4f} (Price {current_price:.4f} | ATR {current_atr:.4f})")
-                    else:
-                        new_sl = current_price + trailing_dist
-                        # ONLY MOVE DOWN
-                        if new_sl < pos['sl']:
-                            pos['sl'] = new_sl
-                            logger.info(f"🐕 BLOODHOUND: Trailed SL for {symbol} to {new_sl:.4f} (Price {current_price:.4f} | ATR {current_atr:.4f})")
-            except Exception as e:
-                logger.error(f"Trailing Stop Error: {e}")
+            # 1b. THE HARVESTER: Secure Profits (Break Even & Partial TP)
+            # We track R-Multiple (Profit / Risk) where Risk = |Entry - Initial SL|
+            # Note: We need to store Initial SL in pos dict. If not present, estimate it.
+            
+            initial_sl = pos.get('initial_sl', pos['sl']) # Fallback to current SL if missing
+            current_risk_dist = abs(pos['entry_price'] - initial_sl)
+            if current_risk_dist == 0: current_risk_dist = pos['entry_price'] * 0.01 # Prevent div by 0
+            
+            r_multiple = (current_price - pos['entry_price']) / current_risk_dist if pos['side'] == 'LONG' else \
+                         (pos['entry_price'] - current_price) / current_risk_dist
+            
+            # STATE TRACKING (Add these fields to pos dict when opening)
+            # If not present, we assume False
+            has_moved_to_be = pos.get('be_locked', False)
+            has_taken_partial = pos.get('partial_taken', False)
+            
+            # A. MOVE TO BREAK EVEN at 1R
+            if r_multiple >= 1.0 and not has_moved_to_be:
+                # Move SL to Entry (Plus small buffer for fees)
+                new_sl = pos['entry_price'] * (1.001 if pos['side'] == 'LONG' else 0.999)
+                
+                # Check if this strictly betters the current SL
+                better_sl = False
+                if pos['side'] == 'LONG' and new_sl > pos['sl']: better_sl = True
+                if pos['side'] == 'SHORT' and new_sl < pos['sl']: better_sl = True
+                
+                if better_sl:
+                    pos['sl'] = new_sl
+                    pos['be_locked'] = True
+                    logger.info(f"🛡️ HARVESTER: Locked BREAK EVEN for {symbol} @ {new_sl:.4f} (Reached 1R)")
+
+            # B. PARTIAL PROFIT at 2R (Take 50% off table)
+            if r_multiple >= 2.0 and not has_taken_partial:
+                # Close 50% of REMAINING size
+                qty_to_close = pos['amount'] * 0.5
+                await self.market.close_position(symbol, f"HARVESTER Partial TP (2R)", params={'qty': qty_to_close})
+                
+                pos['amount'] -= qty_to_close # Update local tracking
+                pos['partial_taken'] = True
+                logger.info(f"🌾 HARVESTER: Took 50% Profit on {symbol} @ {current_price:.4f} (Reached 2R)")
+
+            # 1c. THE BLOODHOUND V3 (ATR Trailing Stop)
+            # Only trail IF we have already locked Break Even (Don't choke early trade)
+            if has_moved_to_be:
+                try:
+                    # Get ATR for current volatility
+                    df_atr = await self.market.get_klines(symbol, interval=config.TIMEFRAME, limit=20)
+                    if not df_atr.empty:
+                        current_atr = self.detector.calculate_atr(df_atr).iloc[-1]
+                        
+                        # Determine Trailing Distance based on ROI
+                        # < 1% Profit: Loose (3x ATR)
+                        # > 1% Profit: Tightening (2x ATR)
+                        # > 3% Profit: Sniper (1.5x ATR)
+                        multiplier = 3.0
+                        if pnl_pct > 0.03: multiplier = 1.5
+                        elif pnl_pct > 0.01: multiplier = 2.0
+                        
+                        trailing_dist = current_atr * multiplier
+                        
+                        if pos['side'] == 'LONG':
+                            new_sl = current_price - trailing_dist
+                            # ONLY MOVE UP
+                            if new_sl > pos['sl']:
+                                pos['sl'] = new_sl
+                                logger.info(f"🐕 BLOODHOUND: Trailed SL for {symbol} to {new_sl:.4f} (Price {current_price:.4f} | ATR {current_atr:.4f})")
+                        else:
+                            new_sl = current_price + trailing_dist
+                            # ONLY MOVE DOWN
+                            if new_sl < pos['sl']:
+                                pos['sl'] = new_sl
+                                logger.info(f"🐕 BLOODHOUND: Trailed SL for {symbol} to {new_sl:.4f} (Price {current_price:.4f} | ATR {current_atr:.4f})")
+                except Exception as e:
+                    logger.error(f"Trailing Stop Error: {e}")
 
             # 2. Check Major Resistance (REAL TIME PROTECTION)
             # We check this frequently to exit BEFORE SL if hitting a wall

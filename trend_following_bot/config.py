@@ -41,25 +41,27 @@ class Config:
     # Profit Targets
     DAILY_PROFIT_TARGET_PCT = 3.0    # Stop after 3% daily gain (Realistic)
     
-    # Risk Management
-    # ROI Targets: SL -2.5% ROI, TP +20% ROI (at 5x Leverage)
-    # ROI Targets: SL -1.5% Price Move, TP +5% Price Move
-    # Price Movement = ROI / Leverage
-    STOP_LOSS_PCT = 1.5              # 1.5% move * 10x = 15% PnL ($0.22 loss). Gives breath.
-    TAKE_PROFIT_PCT = 4.0            # 4% move * 5x lev = 20% Gain
+    # Risk Management (The Risk Vault - SNIPER V4)
+    RISK_PER_TRADE_PCT = 1.0         # Risk 1% of Equity per trade (Professional Standard)
+    TARGET_RISK_REWARD = 3.0         # Aim for 3R (1% Risk -> 3% Profit)
+    MAX_CAPITAL_PER_TRADE_PCT = 25.0 # Cap max position size to 25% of account (Safety Cap)
     
-    MAX_OPEN_POSITIONS = 10          # Expanded to 10 for Stress Testing
-    CAPITAL_PER_TRADE_PCT = 15.0     # 15% ($1.50) * 10x = $15.00 Position (Safe above min $5)
-    LEVERAGE = 10                    # 10x required to trade with small balance
+    # ROI Targets (Fallback/Initial)
+    # Price Movement = ROI / Leverage
+    STOP_LOSS_PCT = 1.5              # Base Stop distance (will be dynamic)
+    TAKE_PROFIT_PCT = 4.5            # 1:3 RR base expectation
+    
+    CAPITAL_PER_TRADE_PCT = 0.0      # DEPRECATED in favor of Risk Sizing
+    LEVERAGE = 10                    # 10x
     
     # Dynamic TP/SL Lookback
     LOOKBACK_WINDOW_SL = 20          # Recent Low/High for Stop Loss
     LOOKBACK_WINDOW_TP = 50          # Recent High/Low for Take Profit
     
-    # Trailing Stop
+    # Trailing Stop (The Bloodhound V4 - Sniper Mode)
     USE_TRAILING_STOP = True
-    TRAILING_ACTIVATION_PCT = 5.0    # Activate after 5% gain
-    TRAILING_DISTANCE_PCT = 4.0      # Trail 4% behind price
+    TRAILING_ACTIVATION_PCT = 1.0    # Activate Trailing immediately after 1R (1% Gain)
+    TRAILING_DISTANCE_PCT = 4.0      # Dynamic (Will be overridden by ATR logic)
     
     # Resistance Logic
     RESISTANCE_TOUCHES_MIN = 3       # Major resistance = 3+ touches
