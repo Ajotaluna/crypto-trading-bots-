@@ -15,6 +15,10 @@ class Config:
     REQUIRE_VOLUME_SURGE = True      # Mandatory Volume
     MIN_VOLUME_MULTIPLIER = 1.5      # Significant surge needed
     
+    # Unleashed Mode (Verticality Capture)
+    ALLOW_MOMENTUM_OVERRIDE = True   # If Score > 90, Ignore Titan/Sentiment
+    MOMENTUM_SCORE_THRESHOLD = 90.0  # The "Verticality" Threshold
+    
     # Smart Entry (Confirmation V3 - Sniper)
     SMART_ENTRY_ENABLED = True       # Wait for breakout before entering
     CONFIRMATION_TIMEOUT_MINS = 45   # Extended listening time
