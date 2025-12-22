@@ -116,10 +116,25 @@ class TrendBot:
                     logger.info(f"--- STATUS REPORT: No Open Positions (PnL: {self.market.cumulative_pnl_daily*100:.2f}%) ---")
 
                 if total_pnl_pct >= (config.DAILY_PROFIT_TARGET_PCT/100):
-                    logger.info(f"DAILY TARGET REACHED! PnL: +{total_pnl_pct*100:.2f}%")
-                    # CONTINUOUS COMPOUNDING: Don't stop, just log.
-                    # self.running = False 
-                    # break
+                    logger.info(f"🏆 DAILY TARGET HIT (+{total_pnl_pct*100:.2f}%)! Securing Profits & Compounding...")
+                    
+                    # 1. Force Close All (Bank it)
+                    for symbol in list(self.market.positions.keys()):
+                        await self.market.close_position(symbol, "TARGET REACHED - COMPOUNDING")
+                    
+                    # 2. Wait for API to settle
+                    await asyncio.sleep(2)
+                    
+                    # 3. Refresh Balance (Update "Zero" Baseline)
+                    # The next initialize_balance below will catch the new Equity as Balance
+                    await self.market.initialize_balance()
+                    
+                    # 4. Reset Tracking
+                    self.market.cumulative_pnl_daily = 0.0
+                    logger.info(f"🔄 RESTARTING RACE with new Baseline: ${self.market.balance:.2f}. Next Target: +{config.DAILY_PROFIT_TARGET_PCT}%")
+                    
+                    # Force continue to skip this loop iteration
+                    continue
                 
                 # REFRESH BALANCE FOR COMPOUNDING
                 # We update balance here so the NEXT batch scan uses the new capital (Initial + Profit)
