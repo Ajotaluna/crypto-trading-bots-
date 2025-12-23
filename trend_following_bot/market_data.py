@@ -131,7 +131,9 @@ class MarketData:
     async def initialize_balance(self):
         """Get initial balance"""
         if self.is_dry_run:
-            self.balance = 1000.0
+            # FIX: Only reset if not already set (preserve Compounding)
+            if not hasattr(self, 'balance') or self.balance is None or self.balance == 0:
+                self.balance = 1000.0
         else:
             res = await self._signed_request('GET', '/fapi/v2/balance')
             if res:

@@ -76,44 +76,56 @@ class TrendBot:
         logger.info("Started Status Reporter...")
         while self.running:
             try:
-                # 0. Check Total Equity (Balance + Unr PnL)
-                floating_pnl_pct = 0.0
+                # 0. MATH FIX: Total Equity & PnL Calculation
+                # Equity = Available Balance + Margin Used + Unrealized PnL
+                
+                margin_used = 0.0
                 unrealized_pnl_usdt = 0.0
                 
                 if self.market.positions:
                     for sym, pos in self.market.positions.items():
+                        # Calculate Margin Used
+                        margin_used += pos['amount'] / config.LEVERAGE
+                        
+                        # Calculate Unrealized PnL
                         curr_price = await self.market.get_current_price(sym)
                         if curr_price > 0:
                             entry = pos['entry_price']
                             if pos['side'] == 'LONG':
-                                pnl = (curr_price - entry) / entry
+                                pnl_val = (pos['amount'] / entry) * (curr_price - entry)
                             else:
-                                pnl = (entry - curr_price) / entry
+                                pnl_val = (pos['amount'] / entry) * (entry - curr_price)
                             
-                            pnl_val = (pos['amount'] * entry) * pnl
                             unrealized_pnl_usdt += pnl_val
-                            floating_pnl_pct += pnl 
                 
-                total_pnl_pct = self.market.cumulative_pnl_daily + floating_pnl_pct
-                total_equity = self.market.balance + unrealized_pnl_usdt
+                # Formula: Equity = Balance (Available) + Margin (Legacy: mock balance subtracts margin, real doesn't always reflect same in API)
+                # In MarketData.open_position (Dry Run), self.balance IS REDUCED by margin.
+                # So Equity = self.market.balance (Available) + margin_used + unrealized_pnl_usdt
+                
+                total_equity = self.market.balance + margin_used + unrealized_pnl_usdt
+                
+                # Formula: Total PnL % = (Current Equity - Initial Daily Balance) / Initial Daily Balance
+                if self.start_balance > 0:
+                    total_pnl_pct = (total_equity - self.start_balance) / self.start_balance
+                else:
+                    total_pnl_pct = 0.0
                 
                 # Log Status
                 if self.market.positions:
-                    logger.info(f"--- STATUS REPORT (Total Equity: {total_equity:.2f} | PnL: {total_pnl_pct*100:.2f}%) ---")
+                    logger.info(f"--- STATUS REPORT (Equity: {total_equity:.2f} | PnL: {total_pnl_pct*100:.2f}%) ---")
                     for sym, pos in self.market.positions.items():
                         curr_price = await self.market.get_current_price(sym)
-                        pnl = 0.0
+                        pnl_roi = 0.0
                         if curr_price > 0:
-                            entry = pos['entry_price']
                             if pos['side'] == 'LONG':
-                                pnl = (curr_price - entry) / entry * 100
+                                pnl_roi = (curr_price - pos['entry_price']) / pos['entry_price'] * 100
                             else:
-                                pnl = (entry - curr_price) / entry * 100
+                                pnl_roi = (pos['entry_price'] - curr_price) / pos['entry_price'] * 100
                         
                         duration_min = (datetime.now() - pos['entry_time']).total_seconds() / 60
-                        logger.info(f"{sym} {pos['side']} | PnL: {pnl:.2f}% | Time: {duration_min:.1f}m")
+                        logger.info(f"{sym} {pos['side']} | ROI: {pnl_roi:.2f}% | Time: {duration_min:.1f}m")
                 else:
-                    logger.info(f"--- STATUS REPORT: No Open Positions (PnL: {self.market.cumulative_pnl_daily*100:.2f}%) ---")
+                    logger.info(f"--- STATUS REPORT: No Open Positions (PnL: {total_pnl_pct*100:.2f}%) ---")
 
                 if total_pnl_pct >= (config.DAILY_PROFIT_TARGET_PCT/100):
                     logger.info(f"🏆 DAILY TARGET HIT (+{total_pnl_pct*100:.2f}%)! Securing Profits & Compounding...")
@@ -129,8 +141,9 @@ class TrendBot:
                     # The next initialize_balance below will catch the new Equity as Balance
                     await self.market.initialize_balance()
                     
-                    # 4. Reset Tracking
-                    self.market.cumulative_pnl_daily = 0.0
+                    # 4. Reset Tracking & Update Baseline Math
+                    self.start_balance = self.market.balance # CRITICAL: New Floor
+                    # self.market.cumulative_pnl_daily = 0.0 # No longer needed with Equity Math
                     logger.info(f"🔄 RESTARTING RACE with new Baseline: ${self.market.balance:.2f}. Next Target: +{config.DAILY_PROFIT_TARGET_PCT}%")
                     
                     # Force continue to skip this loop iteration
