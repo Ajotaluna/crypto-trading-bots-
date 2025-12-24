@@ -128,30 +128,20 @@ class TrendBot:
                     logger.info(f"--- STATUS REPORT: No Open Positions (PnL: {total_pnl_pct*100:.2f}%) ---")
 
                 if total_pnl_pct >= (config.DAILY_PROFIT_TARGET_PCT/100):
-                    logger.info(f"🏆 DAILY TARGET HIT (+{total_pnl_pct*100:.2f}%)! Securing Profits & Compounding...")
+                    logger.info(f"🏆 DAILY TARGET HIT (+{total_pnl_pct*100:.2f}%)! Stopping to Secure Profits.")
                     
                     # 1. Force Close All (Bank it)
                     for symbol in list(self.market.positions.keys()):
-                        await self.market.close_position(symbol, "TARGET REACHED - COMPOUNDING")
+                        await self.market.close_position(symbol, "TARGET REACHED")
                     
-                    # 2. Wait for API to settle
-                    await asyncio.sleep(2)
+                    # 2. Reset Monthly/Daily Tracker (Start New Loop)
+                    # We update the baseline to the current equity so PnL goes back to 0.0%
+                    self.start_balance = total_equity
+                    self.market.cumulative_pnl_daily = 0.0
                     
-                    # 3. Refresh Balance (Update "Zero" Baseline)
-                    # The next initialize_balance below will catch the new Equity as Balance
-                    await self.market.initialize_balance()
-                    
-                    # 4. Reset Tracking & Update Baseline Math
-                    self.start_balance = self.market.balance # CRITICAL: New Floor
-                    # self.market.cumulative_pnl_daily = 0.0 # No longer needed with Equity Math
-                    logger.info(f"🔄 RESTARTING RACE with new Baseline: ${self.market.balance:.2f}. Next Target: +{config.DAILY_PROFIT_TARGET_PCT}%")
-                    
-                    # Force continue to skip this loop iteration
+                    logger.info(f"🔄 Loop Reset. New Baseline: ${self.start_balance:.2f}. Searching for next +{config.DAILY_PROFIT_TARGET_PCT}%...")
+                    await asyncio.sleep(5) # Cooldown
                     continue
-                
-                # REFRESH BALANCE FOR COMPOUNDING
-                # We update balance here so the NEXT batch scan uses the new capital (Initial + Profit)
-                await self.market.initialize_balance()
                 
                 # Check Watchlist just in case (optional, low priority)
                 if len(self.market.positions) < config.MAX_OPEN_POSITIONS:

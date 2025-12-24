@@ -362,17 +362,23 @@ class MarketData:
         
         if self.is_dry_run:
             # MOCK EXECUTION
+            # Fix: Deduct MARGIN, not Total Size
+            leverage = config.LEVERAGE if hasattr(config, 'LEVERAGE') else 5
+            margin_cost = amount_usdt / leverage
+            
             self.positions[symbol] = {
                 'symbol': symbol,
                 'side': side,
                 'entry_price': price,
                 'amount': amount,
+                'margin': margin_cost, # Track margin for close
+                'leverage': leverage,
                 'sl': sl_price,
                 'tp': tp_price,
                 'entry_time': datetime.now()
             }
-            self.balance -= amount_usdt
-            logger.info(f"[MOCK] OPEN {side} {symbol} @ {price} | SL: {sl_price} | TP: {tp_price}")
+            self.balance -= margin_cost
+            logger.info(f"[MOCK] OPEN {side} {symbol} @ {price} | Size: ${amount_usdt:.2f} | Margin: ${margin_cost:.2f} | Bal: {self.balance:.2f}")
             return self.positions[symbol]
         else:
             # REAL EXECUTION
@@ -483,21 +489,33 @@ class MarketData:
             else:
                 pnl_pct = (pos['entry_price'] - price) / pos['entry_price']
                 
-            pnl_usdt = (qty_to_close * pos['entry_price']) * pnl_pct
+            # PnL Value = Position Value * % Change
+            position_value = qty_to_close * pos['entry_price']
+            pnl_usdt = position_value * pnl_pct
             
-            # Return Principal + PnL
-            # Note: In mock, we deducted full cost from balance.
-            # So we add back (Qty * Entry) + PnL
-            self.balance += (qty_to_close * pos['entry_price']) + pnl_usdt
+            # Return Principal (Margin) + Net PnL
+            # We need the original leverage to know how much margin to return
+            leverage = pos.get('leverage', 5) 
+            principal_returned = position_value / leverage 
+            
+            # LIQUIDATION PROTECTION (Isolated Margin)
+            # You cannot lose more than your deployed margin.
+            # If PnL + Principal < 0, it means you blew the margin. Result is 0 returned.
+            total_returned = principal_returned + pnl_usdt
+            if total_returned < 0:
+                total_returned = 0.0
+                reason = f"LIQUIDATION ({reason})"
+            
+            self.balance += total_returned
             
             # Update position record if partial
             if is_partial:
                 pos['amount'] -= qty_to_close
-                logger.info(f"[MOCK] PARTIAL CLOSE {symbol} | Qty: {qty_to_close:.4f} | PnL: {pnl_pct*100:.2f}% (${pnl_usdt:.2f})")
+                logger.info(f"[MOCK] PARTIAL CLOSE {symbol} | Qty: {qty_to_close:.4f} | PnL: {pnl_pct*100:.2f}% (${pnl_usdt:.2f}) | Bal: {self.balance:.2f}")
             else:
                 self.cumulative_pnl_daily += pnl_pct
                 duration = (datetime.now() - pos['entry_time']).total_seconds() / 60
-                logger.info(f"[MOCK] CLOSE {symbol} @ {price} | {reason} | PnL: {pnl_pct*100:.2f}% (${pnl_usdt:.2f}) | Time: {duration:.0f}m")
+                logger.info(f"[MOCK] CLOSE {symbol} @ {price} | {reason} | PnL: {pnl_pct*100:.2f}% (${pnl_usdt:.2f}) | Returned: ${total_returned:.2f} | Time: {duration:.0f}m")
                 del self.positions[symbol]
             
         else:
