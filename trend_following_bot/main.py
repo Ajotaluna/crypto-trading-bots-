@@ -76,33 +76,46 @@ class TrendBot:
         logger.info("Started Status Reporter...")
         while self.running:
             try:
-                # 0. MATH FIX: Total Equity & PnL Calculation
-                # Equity = Available Balance + Margin Used + Unrealized PnL
-                
+                # 0. DUAL REPORTING LOGIC (REAL vs DRY RUN)
                 margin_used = 0.0
                 unrealized_pnl_usdt = 0.0
+                total_equity = 0.0
                 
-                if self.market.positions:
-                    for sym, pos in self.market.positions.items():
-                        # Calculate Margin Used
-                        margin_used += pos['amount'] / config.LEVERAGE
+                if not self.market.is_dry_run:
+                    # --- PRODUCTION: USE BINANCE "SOURCE OF TRUTH" ---
+                    real_status = await self.market.get_real_account_status()
+                    if real_status:
+                        total_equity = real_status['equity']
+                        unrealized_pnl_usdt = real_status['unrealized_pnl']
+                        # Calculate Margin from Balance - Available (approx) or iterate positions if needed
+                        # Ideally get 'totalInitialMargin' from API if available, but for now we trust Equity.
+                        # We don't strictly need 'margin_used' for the trigger, just Equity.
                         
-                        # Calculate Unrealized PnL
-                        curr_price = await self.market.get_current_price(sym)
-                        if curr_price > 0:
-                            entry = pos['entry_price']
-                            if pos['side'] == 'LONG':
-                                pnl_val = (pos['amount'] / entry) * (curr_price - entry)
-                            else:
-                                pnl_val = (pos['amount'] / entry) * (entry - curr_price)
+                        logger.debug(f"[REAL] API Status: Eq={total_equity}, PnL_Unr={unrealized_pnl_usdt}")
+                    else:
+                        logger.warning("Failed to fetch Real Account Status. Skipping report.")
+                        await asyncio.sleep(5)
+                        continue
+                else:
+                    # --- DRY RUN: USE MANUAL CALCULATOR ---
+                    if self.market.positions:
+                        for sym, pos in self.market.positions.items():
+                            # Calculate Margin Used (USDT Value / Leverage)
+                            notional_value = pos['amount'] * pos['entry_price']
+                            margin_used += notional_value / config.LEVERAGE
                             
-                            unrealized_pnl_usdt += pnl_val
-                
-                # Formula: Equity = Balance (Available) + Margin (Legacy: mock balance subtracts margin, real doesn't always reflect same in API)
-                # In MarketData.open_position (Dry Run), self.balance IS REDUCED by margin.
-                # So Equity = self.market.balance (Available) + margin_used + unrealized_pnl_usdt
-                
-                total_equity = self.market.balance + margin_used + unrealized_pnl_usdt
+                            # Calculate Unrealized PnL (USDT)
+                            curr_price = await self.market.get_current_price(sym)
+                            if curr_price > 0:
+                                if pos['side'] == 'LONG':
+                                    pnl_val = pos['amount'] * (curr_price - pos['entry_price'])
+                                else:
+                                    pnl_val = pos['amount'] * (pos['entry_price'] - curr_price)
+                                
+                                unrealized_pnl_usdt += pnl_val
+                    
+                    # Formula: Equity = Balance (Available) + Margin + Unrealized PnL
+                    total_equity = self.market.balance + margin_used + unrealized_pnl_usdt
                 
                 # Formula: Total PnL % = (Current Equity - Initial Daily Balance) / Initial Daily Balance
                 if self.start_balance > 0:
@@ -126,7 +139,8 @@ class TrendBot:
                         logger.info(f"{sym} {pos['side']} | ROI: {pnl_roi:.2f}% | Time: {duration_min:.1f}m")
                 else:
                     logger.info(f"--- STATUS REPORT: No Open Positions (PnL: {total_pnl_pct*100:.2f}%) ---")
-
+                    
+                # TARGET HIT LOGIC (Simple Reset)
                 if total_pnl_pct >= (config.DAILY_PROFIT_TARGET_PCT/100):
                     logger.info(f"🏆 DAILY TARGET HIT (+{total_pnl_pct*100:.2f}%)! Stopping to Secure Profits.")
                     
@@ -434,6 +448,21 @@ class TrendBot:
             
             # Calculate duration
             duration_sec = (datetime.now() - pos['entry_time']).total_seconds()
+            
+            # 1. HEARTBEAT MONITOR (LIFECYCLE TRACKER)
+            # Log the vital signs of the trade constantly
+            if self.market.is_dry_run:
+                # Calculate Distances
+                dist_tp_pct = abs(pos['tp'] - current_price) / current_price * 100
+                dist_sl_pct = abs(current_price - pos['sl']) / current_price * 100
+                
+                # Calculate Current PnL
+                if pos['side'] == 'LONG':
+                    curr_pnl_pct = (current_price - pos['entry_price']) / pos['entry_price'] * 100
+                else:
+                    curr_pnl_pct = (pos['entry_price'] - current_price) / pos['entry_price'] * 100
+                    
+                logger.info(f"💓 [TRACKER] {symbol}: Price {current_price:.5f} | ROI {curr_pnl_pct:+.2f}% | To TP: {dist_tp_pct:.2f}% | To SL: {dist_sl_pct:.2f}%")
             
             # 1. Check Hard SL/TP (Instant)
             # Calculate PnL (ROI)

@@ -142,6 +142,34 @@ class MarketData:
                         self.balance = float(asset['balance'])
                         break
         logger.info(f"Initial Balance: {self.balance:.2f} USDT ({'DRY RUN' if self.is_dry_run else 'PRODUCTION'})")
+
+    async def get_real_account_status(self):
+        """
+        Fetch REAL-TIME Account Status directly from Binance.
+        Returns exact Equity, Balance, and PnL including fees/funding.
+        """
+        if self.is_dry_run:
+            # Fallback for dry run (shouldn't be called, but safe)
+            return None
+            
+        try:
+            # /fapi/v2/account gives detailed margin/pnl info
+            res = await self._signed_request('GET', '/fapi/v2/account')
+            if res:
+                # Key fields: 
+                # totalWalletBalance: Balance including realized PnL/Funding
+                # totalUnrealizedProfit: Floating PnL of open positions
+                # totalMarginBalance: Equity (Wallet + Unrealized)
+                
+                return {
+                    'balance': float(res['totalWalletBalance']),
+                    'equity': float(res['totalMarginBalance']),
+                    'unrealized_pnl': float(res['totalUnrealizedProfit'])
+                }
+        except Exception as e:
+            logger.error(f"Failed to fetch Real Account Status: {e}")
+            return None
+        return None
         
     async def get_top_symbols(self, limit=None):
         """Get top volume USDT pairs"""
@@ -361,24 +389,19 @@ class MarketData:
         amount = amount_usdt / price
         
         if self.is_dry_run:
-            # MOCK EXECUTION
-            # Fix: Deduct MARGIN, not Total Size
-            leverage = config.LEVERAGE if hasattr(config, 'LEVERAGE') else 5
-            margin_cost = amount_usdt / leverage
-            
+            # MOCK EXECUTION (LIFECYCLE TRACKER MODE)
+            # No Balance Deduction. Infinite Funds for Strategy Testing.
             self.positions[symbol] = {
                 'symbol': symbol,
                 'side': side,
                 'entry_price': price,
                 'amount': amount,
-                'margin': margin_cost, # Track margin for close
-                'leverage': leverage,
                 'sl': sl_price,
                 'tp': tp_price,
                 'entry_time': datetime.now()
             }
-            self.balance -= margin_cost
-            logger.info(f"[MOCK] OPEN {side} {symbol} @ {price} | Size: ${amount_usdt:.2f} | Margin: ${margin_cost:.2f} | Bal: {self.balance:.2f}")
+            # Log purely as a Strategy Event
+            logger.info(f"🧬 [TRACKER] OPEN {side} {symbol} @ {price:.4f} | Target: {tp_price:.4f} | Stop: {sl_price:.4f} | Tracking Lifecycle...")
             return self.positions[symbol]
         else:
             # REAL EXECUTION
@@ -483,39 +506,25 @@ class MarketData:
         is_partial = qty_to_close < pos['amount'] * 0.99
         
         if self.is_dry_run:
-            # MOCK CLOSE
+            # MOCK CLOSE (LIFECYCLE TRACKER)
             if pos['side'] == 'LONG':
                 pnl_pct = (price - pos['entry_price']) / pos['entry_price']
             else:
                 pnl_pct = (pos['entry_price'] - price) / pos['entry_price']
                 
-            # PnL Value = Position Value * % Change
-            position_value = qty_to_close * pos['entry_price']
-            pnl_usdt = position_value * pnl_pct
+            # No Financial Math (Balance updates removed)
             
-            # Return Principal (Margin) + Net PnL
-            # We need the original leverage to know how much margin to return
-            leverage = pos.get('leverage', 5) 
-            principal_returned = position_value / leverage 
-            
-            # LIQUIDATION PROTECTION (Isolated Margin)
-            # You cannot lose more than your deployed margin.
-            # If PnL + Principal < 0, it means you blew the margin. Result is 0 returned.
-            total_returned = principal_returned + pnl_usdt
-            if total_returned < 0:
-                total_returned = 0.0
-                reason = f"LIQUIDATION ({reason})"
-            
-            self.balance += total_returned
+            # Simple Outcome Reporting
+            outcome = "WIN" if pnl_pct > 0 else "LOSS"
+            if abs(pnl_pct) < 0.001: outcome = "BREAKEVEN"
             
             # Update position record if partial
             if is_partial:
                 pos['amount'] -= qty_to_close
-                logger.info(f"[MOCK] PARTIAL CLOSE {symbol} | Qty: {qty_to_close:.4f} | PnL: {pnl_pct*100:.2f}% (${pnl_usdt:.2f}) | Bal: {self.balance:.2f}")
+                logger.info(f"🧬 [TRACKER] PARTIAL CLOSE {symbol} | ROI: {pnl_pct*100:.2f}% | Secured Partial.")
             else:
-                self.cumulative_pnl_daily += pnl_pct
                 duration = (datetime.now() - pos['entry_time']).total_seconds() / 60
-                logger.info(f"[MOCK] CLOSE {symbol} @ {price} | {reason} | PnL: {pnl_pct*100:.2f}% (${pnl_usdt:.2f}) | Returned: ${total_returned:.2f} | Time: {duration:.0f}m")
+                logger.info(f"🧬 [TRACKER] CLOSED {symbol} | Result: {outcome} ({pnl_pct*100:.2f}%) | Reason: {reason} | Time: {duration:.1f}m")
                 del self.positions[symbol]
             
         else:
