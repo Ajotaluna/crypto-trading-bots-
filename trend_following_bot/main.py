@@ -115,7 +115,15 @@ class TrendBot:
                                 unrealized_pnl_usdt += pnl_val
                     
                     # Formula: Equity = Balance (Available) + Margin + Unrealized PnL
-                    total_equity = self.market.balance + margin_used + unrealized_pnl_usdt
+                    # WAIT! In "Tracker Mode" (Dry Run), we typically DO NOT deduct margin from self.balance anymore.
+                    # So self.balance is already the Full Principal ($1000).
+                    # If we add Margin Used ($66) to it, we create Fake Money ($1066).
+                    
+                    # CORRECTION:
+                    # If Dry Run (Tracker Mode): Equity = Gross Balance + PnL
+                    # If Real Mode: Handled above by API.
+                    
+                    total_equity = self.market.balance + unrealized_pnl_usdt
                 
                 # Formula: Total PnL % = (Current Equity - Initial Daily Balance) / Initial Daily Balance
                 if self.start_balance > 0:
