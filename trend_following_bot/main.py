@@ -435,9 +435,15 @@ class TrendBot:
             # Optional: Resize to Max Balance? No, violates Risk Vault. Skip.
             return
         
-        logger.info(f"🔫 OPENING {symbol} {signal['direction']} | Size: ${amount:.2f} | Entry: {price:.4f} | SL: {sl:.4f} | TP: {tp:.4f}")
+        # logger.info(f"🔫 OPENING {symbol} ...") <- REMOVED to avoid confusion
+        
         result = await self.market.open_position(symbol, signal['direction'], amount, sl, tp)
-        if not result:
+        
+        if result:
+            # LOG THE REAL EXECUTION PRICE (Honesty Fix)
+            real_entry = result['entry_price']
+            logger.info(f"🔫 OPEN SUCCESS {symbol} {signal['direction']} | Size: ${amount:.2f} | Entry: {real_entry:.4f} | SL: {sl:.4f} | TP: {tp:.4f}")
+        else:
             logger.error(f"❌ EXECUTION FAILED for {symbol}. Check logs for details (Precision/Margin/API).")
 
     async def manage_positions(self):
