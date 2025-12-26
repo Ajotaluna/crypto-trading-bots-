@@ -507,41 +507,37 @@ class TrendBot:
             # Note: We need to store Initial SL in pos dict. If not present, estimate it.
             
             initial_sl = pos.get('initial_sl', pos['sl']) # Fallback to current SL if missing
-            current_risk_dist = abs(pos['entry_price'] - initial_sl)
-            if current_risk_dist == 0: current_risk_dist = pos['entry_price'] * 0.01 # Prevent div by 0
             
-            r_multiple = (current_price - pos['entry_price']) / current_risk_dist if pos['side'] == 'LONG' else \
-                         (pos['entry_price'] - current_price) / current_risk_dist
+            # 1b. THE HARVESTER V2: Simplified ROI-Based Management
+            # We use strict ROI targets to secure bags early.
             
-            # STATE TRACKING (Add these fields to pos dict when opening)
-            # If not present, we assume False
+            # STATE TRACKING
             has_moved_to_be = pos.get('be_locked', False)
             has_taken_partial = pos.get('partial_taken', False)
             
-            # A. MOVE TO BREAK EVEN at 1R
-            if r_multiple >= 1.0 and not has_moved_to_be:
-                # Move SL to Entry (Plus small buffer for fees)
-                new_sl = pos['entry_price'] * (1.001 if pos['side'] == 'LONG' else 0.999)
+            current_roi = pnl_pct
+            
+            # A. MOVE TO BREAK EVEN at +0.6% Profit (Protects against quick reversals)
+            if current_roi >= 0.006 and not has_moved_to_be:
+                # Move SL to Entry (Plus small buffer 0.1% for fees)
+                buffer = 0.001
+                new_sl = pos['entry_price'] * (1 + buffer if pos['side'] == 'LONG' else 1 - buffer)
                 
-                # Check if this strictly betters the current SL
-                better_sl = False
-                if pos['side'] == 'LONG' and new_sl > pos['sl']: better_sl = True
-                if pos['side'] == 'SHORT' and new_sl < pos['sl']: better_sl = True
+                # Update SL
+                pos['sl'] = new_sl
+                pos['be_locked'] = True
                 
-                if better_sl:
-                    pos['sl'] = new_sl
-                    pos['be_locked'] = True
-                    logger.info(f"🛡️ HARVESTER: Locked BREAK EVEN for {symbol} @ {new_sl:.4f} (Reached 1R)")
+                logger.info(f"🛡️ HARVESTER: Locked BREAK EVEN for {symbol} @ {new_sl:.4f} (ROI > 0.6%)")
 
-            # B. PARTIAL PROFIT at 2R (Take 50% off table)
-            if r_multiple >= 2.0 and not has_taken_partial:
-                # Close 50% of REMAINING size
+            # B. PARTIAL PROFIT at +1.2% Profit (Bank 50%)
+            if current_roi >= 0.012 and not has_taken_partial:
+                # Close 50% of CURRENT size
                 qty_to_close = pos['amount'] * 0.5
-                await self.market.close_position(symbol, f"HARVESTER Partial TP (2R)", params={'qty': qty_to_close})
+                await self.market.close_position(symbol, f"HARVESTER Partial TP (+{current_roi*100:.2f}%)", params={'qty': qty_to_close})
                 
                 pos['amount'] -= qty_to_close # Update local tracking
                 pos['partial_taken'] = True
-                logger.info(f"🌾 HARVESTER: Took 50% Profit on {symbol} @ {current_price:.4f} (Reached 2R)")
+                logger.info(f"🌾 HARVESTER: Banking 50% Profit on {symbol} @ {current_price:.5f} (+{current_roi*100:.2f}%)")
 
             # 1c. THE BLOODHOUND V3 (ATR Trailing Stop)
             # Only trail IF we have already locked Break Even (Don't choke early trade)
