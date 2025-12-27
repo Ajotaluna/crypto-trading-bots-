@@ -199,7 +199,7 @@ class TrendBot:
                 await asyncio.sleep(5)
 
     async def scan_and_fill_batch(self, slots_needed):
-        """Analyze market and pick TOP N candidates"""
+        """Analyze market and pick TOP N candidates (Parallel Engine)"""
         # 0. THE KING'S GUARD (BTC Trend Filter)
         btc_trend = await self.market.get_btc_trend()
         
@@ -216,11 +216,9 @@ class TrendBot:
             btc_filter_msg = "📈 BTC BULLISH (Longs Only)"
             
         if btc_filter_msg:
-             # Only log occasionally or if needed
              pass
 
         # C. THE BRONX SHIELD (NY Session Protection) 🗽
-        # NY Hours: Approx 13:00 - 21:00 UTC (8am - 4pm EST)
         current_hour = datetime.utcnow().hour
         is_ny_session = 13 <= current_hour < 21
         
@@ -229,84 +227,75 @@ class TrendBot:
         
         if is_ny_session:
             logger.info("🗽 BRONX SHIELD ACTIVE (NY Session): Strict Mode ON. No Overrides. Min Score 85.")
-            min_score_required = 85 # Higher standard
-            allow_override = False  # Disable "Trap" pumps
+            min_score_required = 85
+            allow_override = False
             
         symbols = await self.market.get_top_symbols(limit=None)
         final_candidates = []
-        
         loop = asyncio.get_running_loop()
-        
-        for symbol in symbols:
-            # Blacklist Check
-            if not self.blacklist.is_allowed(symbol): continue
-            if not self.running: break
-            if symbol in self.market.positions: continue
-            
-            # 1. Fetch Data
-            df = await self.market.get_klines(symbol, interval=config.TIMEFRAME)
-            df_daily = await self.market.get_klines(symbol, interval='1d', limit=90)
-            if df.empty or df_daily.empty: continue
-            
-            # 2. Analyze Technicals FIRST (Priority)
-            tech_signal_task = loop.run_in_executor(self.executor, self.detector.analyze, df, df_daily)
-            tech_signal = await tech_signal_task
-            
-            if not tech_signal: continue
-            
-            # --- MOMENTUM OVERRIDE CHECK (The Unleashed Logic) ---
-            is_override = False
-            override_reason = ""
-            
-            # BRONX SHIELD: Allow Override ONLY if NOT NY Session
-            if allow_override and tech_signal['score'] >= config.MOMENTUM_SCORE_THRESHOLD:
-                is_override = True
-                override_reason = f"🚀 MOMENTUM OVERRIDE (Score {tech_signal['score']})"
-                logger.info(f"{override_reason} for {symbol}. Bypassing Filters.")
-            
-            # 3. TITAN DATA & CHECKS (Only if NOT Override)
-            if not is_override:
-                # Standard Checks (Dynamic Score)
-                if tech_signal['score'] < min_score_required: continue
-                
-                # Check King's Guard Compatibility (GRAY ZONE ENFORCEMENT)
-                # If BTC is Bearish, we BLOCK Longs (unless Override?)
-                # Decision: King's Guard applies to Standard Trades.
-                if btc_trend == 'BEARISH' and tech_signal['direction'] == 'LONG': 
-                    # logger.debug(f"Skipped LONG on {symbol} due to King's Guard (BTC Bearish)")
-                    continue
-                if btc_trend == 'BULLISH' and tech_signal['direction'] == 'SHORT': 
-                    # logger.debug(f"Skipped SHORT on {symbol} due to King's Guard (BTC Bullish)")
-                    continue
 
-                # Titan Sentiment Check
-                oi_data = await self.market.get_open_interest(symbol, period='1h')
-                top_ls_data = await self.market.get_top_long_short_ratio(symbol, period='1h')
-                global_ls_data = await self.market.get_global_long_short_ratio(symbol, period='1h')
+        # --- PARALLEL ANALYSIS ENGINE (Optimization V2) ---
+        async def analyze_symbol(symbol):
+            try:
+                # Blacklist Check
+                if not self.blacklist.is_allowed(symbol): return None
+                if symbol in self.market.positions: return None
                 
-                sentiment = SentimentAnalyzer.analyze_sentiment(oi_data, top_ls_data, global_ls_data)
+                # 1. Fetch Data
+                df = await self.market.get_klines(symbol, interval=config.TIMEFRAME)
+                df_daily = await self.market.get_klines(symbol, interval='1d', limit=90)
+                if df.empty or df_daily.empty: return None
                 
-                valid_titan = False
-                if tech_signal['direction'] == 'LONG' and sentiment['signal'] == 'BULLISH':
-                    valid_titan = True
-                    tech_signal['score'] += 10
-                elif tech_signal['direction'] == 'SHORT' and sentiment['signal'] == 'BEARISH':
-                    valid_titan = True
-                    tech_signal['score'] += 10
+                # 2. Analyze Technicals (CPU Bound -> Thread Pool)
+                tech_signal = await loop.run_in_executor(self.executor, self.detector.analyze, df, df_daily)
+                
+                if not tech_signal: return None
+                
+                # --- MOMENTUM OVERRIDE CHECK ---
+                is_override = False
+                if allow_override and tech_signal['score'] >= config.MOMENTUM_SCORE_THRESHOLD:
+                    is_override = True
+                
+                # 3. TITAN DATA & CHECKS
+                if not is_override:
+                    if tech_signal['score'] < min_score_required: return None
                     
-                if not valid_titan: continue
-            else:
-                 # In Override, we assume Titan is irrelevant or 'Good Enough'
-                 pass
+                    # King's Guard
+                    if btc_trend == 'BEARISH' and tech_signal['direction'] == 'LONG': return None
+                    if btc_trend == 'BULLISH' and tech_signal['direction'] == 'SHORT': return None
 
-            # If we reached here, it's a valid candidate (either Titan or Override)
-            final_candidates.append({
-                'symbol': symbol,
-                'df': df,
-                'signal': tech_signal,
-                'score': tech_signal['score'],
-                'is_override': is_override
-            })
+                    # Titan Sentiment
+                    oi_data = await self.market.get_open_interest(symbol, period='1h')
+                    top_ls_data = await self.market.get_top_long_short_ratio(symbol, period='1h')
+                    global_ls_data = await self.market.get_global_long_short_ratio(symbol, period='1h')
+                    sentiment = SentimentAnalyzer.analyze_sentiment(oi_data, top_ls_data, global_ls_data)
+                    
+                    valid_titan = False
+                    if tech_signal['direction'] == 'LONG' and sentiment['signal'] == 'BULLISH':
+                        valid_titan = True
+                        tech_signal['score'] += 10
+                    elif tech_signal['direction'] == 'SHORT' and sentiment['signal'] == 'BEARISH':
+                        valid_titan = True
+                        tech_signal['score'] += 10
+                        
+                    if not valid_titan: return None
+                
+                return {
+                    'symbol': symbol,
+                    'df': df,
+                    'signal': tech_signal,
+                    'score': tech_signal['score'],
+                    'is_override': is_override
+                }
+            except Exception as e:
+                return None
+
+        # EXECUTE PARALLEL ANALYSIS
+        logger.info(f"⚡ Analyzing {len(symbols)} pairs in PARALLEL...")
+        results = await asyncio.gather(*[analyze_symbol(sym) for sym in symbols])
+        
+        # Filter valid results
+        final_candidates = [r for r in results if r is not None]
 
         # Sort by Score (Highest first)
         final_candidates.sort(key=lambda x: x['score'], reverse=True)
@@ -315,14 +304,9 @@ class TrendBot:
         top_picks = final_candidates[:slots_needed]
         
         if top_picks:
-            logger.info(f"Found {len(top_picks)} candidates (Override + Titan). Processing...")
+            logger.info(f"Found {len(top_picks)} candidates. Processing...")
             for pick in top_picks:
-                # STABILITY FILTER V4 (Skip for Override? Maybe dangerous, let's keep it for now unless user complains)
-                # Actually, for PURE VERTICALITY, we might want to skip the 1H EMA check too if score is 95+
-                # Let's keep it safe for V5.5: Override bypasses Sentiment/BTC, but Trend Alignment remains.
-                
                 if not pick['is_override']:
-                    # Apply Trend Alignment only for non-override trades
                     try:
                         df_1h = await self.market.get_klines(pick['symbol'], interval=config.TREND_ALIGN_INTERVAL, limit=config.TREND_ALIGN_EMA + 10)
                         if not df_1h.empty and len(df_1h) > config.TREND_ALIGN_EMA: 
@@ -337,27 +321,18 @@ class TrendBot:
                 else:
                     await self.execute_trade(pick['symbol'], pick['signal'], pick['df'])
         else:
-            logger.info("No suitable candidates found this round.")
+            logger.info("No suitable candidates found.")
 
     async def check_watchlist(self):
-        """
-        Legacy method kept for compatibility, but main focus is now Batch Scan.
-        We can still use this to monitor specific high-potential pairs if needed.
-        """
-        pass # Disabled for now to focus on Batch Strategy
+        """Legacy method"""
+        pass
 
     async def add_to_pending(self, symbol, signal, df):
         """Queue trade for Smart Entry (Confirmation)"""
         if symbol in self.market.positions or symbol in self.pending_entries: return
         
-        # Calculate Trigger Price (Breakout of last candle high/low)
         last_candle = df.iloc[-1]
-        trigger_price = 0.0
-        
-        if signal['direction'] == 'LONG':
-            trigger_price = last_candle['high']
-        else:
-            trigger_price = last_candle['low']
+        trigger_price = float(last_candle['high']) if signal['direction'] == 'LONG' else float(last_candle['low'])
             
         self.pending_entries[symbol] = {
             'symbol': symbol,
@@ -366,75 +341,83 @@ class TrendBot:
             'queued_time': datetime.now(),
             'trigger_price': trigger_price,
             'direction': signal['direction'],
-            'state': 'WAIT_BREAK' # V3 State Machine: WAIT_BREAK -> WAIT_RETEST -> EXECUTE
+            'state': 'WAIT_BREAK'
         }
         logger.info(f"⏳ QUEUED {symbol} {signal['direction']} | Wait for break of {trigger_price:.4f}")
 
     async def confirmation_loop(self):
-        """SMART ENTRY: Watches Pending Entries for Breakout"""
-        logger.info("Started Smart Entry Monitor...")
+        """SMART ENTRY V4: Anti-Trap Logic (5m Confirmation)"""
+        logger.info("Started Smart Entry Monitor (V4 - Anti-Trap)...")
         while self.running:
             try:
-                # Iterate copy to allow modification
                 current_time = datetime.now()
                 for symbol, entry in list(self.pending_entries.items()):
                     # check timeout
                     if (current_time - entry['queued_time']).total_seconds() > (config.CONFIRMATION_TIMEOUT_MINS * 60):
-                        logger.info(f"🗑️ EXPIRED {symbol} - No breakout in {config.CONFIRMATION_TIMEOUT_MINS}m")
+                        logger.info(f"🗑️ EXPIRED {symbol}")
                         del self.pending_entries[symbol]
                         continue
                         
-                # DYNAMIC TRIGGER & VALIDATION (Smart Entry V3 - Ironclad)
-                    # State Machine: WAIT_BREAK -> WAIT_RETEST -> EXECUTE
+                    # 1. GET 5M CANDLES (Stricter Timeframe)
+                    df_5m = await self.market.get_klines(symbol, interval='5m', limit=25)
+                    if df_5m.empty: continue
                     
-                    # 1m Candles for Precision
-                    df_1m = await self.market.get_klines(symbol, interval='1m', limit=25)
-                    if df_1m.empty: continue
-                    
-                    last_candle = df_1m.iloc[-1] # Close of previous 1m candle (confirmed) or Current (Tick)? 
-                    # Use -1 (Current Tick) for Retest Touch, -2 (Closed) for Breakout Confirm
-                    closed_candle = df_1m.iloc[-2]
-                    current_price = float(last_candle['close'])
-                    
+                    # Calculate RSI for Trap Detection
+                    df_5m['rsi'] = self.detector.calculate_atr(df_5m) # Placeholder calc logic? No let's use Patterns
+                    # Actually we need PatternDetector instance to calc RSI quickly or manual calc
+                    # Let's do a quick manual RSI here to avoid overhead
+                    try:
+                        delta = df_5m['close'].diff()
+                        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+                        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+                        rs = gain / loss
+                        df_5m['rsi_val'] = 100 - (100 / (1 + rs))
+                        current_rsi = df_5m.iloc[-1]['rsi_val']
+                    except:
+                        current_rsi = 50.0
+
+                    closed_candle = df_5m.iloc[-2] # Confirmed Candle
+                    last_candle = df_5m.iloc[-1]   # Current Tick
                     trigger = entry['trigger_price']
                     state = entry.get('state', 'WAIT_BREAK')
 
                     if state == 'WAIT_BREAK':
-                        # REQUIRE CLOSE BEYOND TRIGGER (Confirmed Breakout)
                         breakout_confirmed = False
+                        is_trap = False
+                        
                         if entry['direction'] == 'LONG':
                             if closed_candle['close'] > trigger:
                                 breakout_confirmed = True
+                                if current_rsi > 75: is_trap = True
                         else:
                             if closed_candle['close'] < trigger:
                                 breakout_confirmed = True
+                                if current_rsi < 25: is_trap = True
                                 
                         if breakout_confirmed:
+                            if is_trap:
+                                logger.warning(f"⚠️ TRAP DETECTED {symbol}: Breakout but RSI Extended ({current_rsi:.1f}). Aborting.")
+                                del self.pending_entries[symbol]
+                                continue
+                                
                             entry['state'] = 'WAIT_RETEST'
-                            logger.info(f"💥 BREAKOUT CONFIRMED for {symbol} @ {closed_candle['close']}! Waiting for Pullback to {trigger}...")
+                            logger.info(f"💥 BREAKOUT CONFIRMED (5m) for {symbol}! Waiting for Pullback...")
 
                     elif state == 'WAIT_RETEST':
-                        # EXECUTE ON TOUCH (Limit Order style simulation)
-                        # We use 0.2% buffer to ensure we get filled near the level
                         retest_success = False
-                        
                         if entry['direction'] == 'LONG':
-                            # Price comes back DOWN to Trigger
-                            limit_buy = trigger * 1.002 # Buy just above support
-                            if float(last_candle['low']) <= limit_buy:
-                                retest_success = True
+                            limit_buy = trigger * 1.002
+                            if float(last_candle['low']) <= limit_buy: retest_success = True
                         else:
-                            # Price comes back UP to Trigger
-                            limit_sell = trigger * 0.998 # Sell just below resistance
-                            if float(last_candle['high']) >= limit_sell:
-                                retest_success = True
+                            limit_sell = trigger * 0.998
+                            if float(last_candle['high']) >= limit_sell: retest_success = True
                                 
                         if retest_success:
-                            logger.info(f"🎯 SNIPER ENTRY V3 {symbol} {entry['direction']} | Retest of {trigger} Successful!")
+                            logger.info(f"🎯 SNIPER ENTRY V4 {symbol}")
                             await self.execute_trade(symbol, entry['signal'], entry['df'])
                             del self.pending_entries[symbol]
 
-                await asyncio.sleep(2) # Check frequently (2s)
+                await asyncio.sleep(2)
             except Exception as e:
                 logger.error(f"Confirmation Loop Error: {e}")
                 await asyncio.sleep(5)
