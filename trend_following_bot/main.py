@@ -203,11 +203,22 @@ class TrendBot:
         # 0. THE KING'S GUARD (BTC Trend Filter)
         btc_trend = await self.market.get_btc_trend()
         
+        # A. RED ZONE (CRASH) -> PAUSE EVERYTHING
         if btc_trend == 'CRASH':
-            # EVEN IN OVERRIDE, CRASH IS DANGEROUS. BUT LET'S SEE.
-            # If Momentum is INSANE (>95), maybe? No, Crash is Crash.
             logger.warning("🛡️ KING'S GUARD: BTC IS CRASHING! Pausing Scans.")
             return
+
+        # B. GRAY ZONE (Directional Bias) -> RESTRICT DIRECTION
+        btc_filter_msg = ""
+        if btc_trend == 'BEARISH':
+            btc_filter_msg = "📉 BTC BEARISH (Shorts Only)"
+        elif btc_trend == 'BULLISH':
+            btc_filter_msg = "� BTC BULLISH (Longs Only)"
+            
+        if btc_filter_msg:
+             # Only log occasionally or if needed, maybe too spammy for every loop?
+             # Let's log it only if we find candidates to explain why they might be skipped.
+             pass
 
         # ... (Legacy BTC Trend logging omitted for brevity, logic holds) ...
 
@@ -226,7 +237,7 @@ class TrendBot:
             df = await self.market.get_klines(symbol, interval=config.TIMEFRAME)
             df_daily = await self.market.get_klines(symbol, interval='1d', limit=90)
             if df.empty or df_daily.empty: continue
-
+            
             # 2. Analyze Technicals FIRST (Priority)
             tech_signal_task = loop.run_in_executor(self.executor, self.detector.analyze, df, df_daily)
             tech_signal = await tech_signal_task
@@ -247,9 +258,15 @@ class TrendBot:
                 # Standard Checks
                 if tech_signal['score'] < config.MIN_SIGNAL_SCORE: continue
                 
-                # Check King's Guard Compatibility
-                if btc_trend == 'BEARISH' and tech_signal['direction'] == 'LONG': continue
-                if btc_trend == 'BULLISH' and tech_signal['direction'] == 'SHORT': continue
+                # Check King's Guard Compatibility (GRAY ZONE ENFORCEMENT)
+                # If BTC is Bearish, we BLOCK Longs (unless Override?)
+                # Decision: King's Guard applies to Standard Trades.
+                if btc_trend == 'BEARISH' and tech_signal['direction'] == 'LONG': 
+                    # logger.debug(f"Skipped LONG on {symbol} due to King's Guard (BTC Bearish)")
+                    continue
+                if btc_trend == 'BULLISH' and tech_signal['direction'] == 'SHORT': 
+                    # logger.debug(f"Skipped SHORT on {symbol} due to King's Guard (BTC Bullish)")
+                    continue
 
                 # Titan Sentiment Check
                 oi_data = await self.market.get_open_interest(symbol, period='1h')

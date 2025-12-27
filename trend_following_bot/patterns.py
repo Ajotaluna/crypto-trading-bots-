@@ -231,7 +231,7 @@ class PatternDetector:
         # 3. BREAKOUT DETECTION (15m) matching Macro Trend
         # Calculate Volume Velocity (Speculative Bulla)
         vol_velocity = curr['volume'] / (curr['vol_ma'] + 1) # +1 to avoid div by zero
-        is_vol_shock = vol_velocity > 3.0 # 300% Volume Spike
+        is_vol_shock = vol_velocity > 4.0 # 400% Volume Spike (Hyper-Strict)
         
         is_vol_surge = curr['volume'] > (curr['vol_ma'] * 1.5)
         is_trend_strong = curr['adx'] > 25
