@@ -213,15 +213,25 @@ class TrendBot:
         if btc_trend == 'BEARISH':
             btc_filter_msg = "📉 BTC BEARISH (Shorts Only)"
         elif btc_trend == 'BULLISH':
-            btc_filter_msg = "� BTC BULLISH (Longs Only)"
+            btc_filter_msg = "📈 BTC BULLISH (Longs Only)"
             
         if btc_filter_msg:
-             # Only log occasionally or if needed, maybe too spammy for every loop?
-             # Let's log it only if we find candidates to explain why they might be skipped.
+             # Only log occasionally or if needed
              pass
 
-        # ... (Legacy BTC Trend logging omitted for brevity, logic holds) ...
-
+        # C. THE BRONX SHIELD (NY Session Protection) 🗽
+        # NY Hours: Approx 13:00 - 21:00 UTC (8am - 4pm EST)
+        current_hour = datetime.utcnow().hour
+        is_ny_session = 13 <= current_hour < 21
+        
+        min_score_required = config.MIN_SIGNAL_SCORE
+        allow_override = config.ALLOW_MOMENTUM_OVERRIDE
+        
+        if is_ny_session:
+            logger.info("🗽 BRONX SHIELD ACTIVE (NY Session): Strict Mode ON. No Overrides. Min Score 85.")
+            min_score_required = 85 # Higher standard
+            allow_override = False  # Disable "Trap" pumps
+            
         symbols = await self.market.get_top_symbols(limit=None)
         final_candidates = []
         
@@ -248,15 +258,16 @@ class TrendBot:
             is_override = False
             override_reason = ""
             
-            if config.ALLOW_MOMENTUM_OVERRIDE and tech_signal['score'] >= config.MOMENTUM_SCORE_THRESHOLD:
+            # BRONX SHIELD: Allow Override ONLY if NOT NY Session
+            if allow_override and tech_signal['score'] >= config.MOMENTUM_SCORE_THRESHOLD:
                 is_override = True
                 override_reason = f"🚀 MOMENTUM OVERRIDE (Score {tech_signal['score']})"
                 logger.info(f"{override_reason} for {symbol}. Bypassing Filters.")
             
             # 3. TITAN DATA & CHECKS (Only if NOT Override)
             if not is_override:
-                # Standard Checks
-                if tech_signal['score'] < config.MIN_SIGNAL_SCORE: continue
+                # Standard Checks (Dynamic Score)
+                if tech_signal['score'] < min_score_required: continue
                 
                 # Check King's Guard Compatibility (GRAY ZONE ENFORCEMENT)
                 # If BTC is Bearish, we BLOCK Longs (unless Override?)
