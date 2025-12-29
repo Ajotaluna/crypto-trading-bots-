@@ -203,38 +203,44 @@ class TrendBot:
         # 0. THE KING'S GUARD (BTC Trend Filter)
         btc_trend = await self.market.get_btc_trend()
         
-        # A. RED ZONE (CRASH) -> PAUSE EVERYTHING
         if btc_trend == 'CRASH':
             logger.warning("🛡️ KING'S GUARD: BTC IS CRASHING! Pausing Scans.")
             return
 
-        # B. GRAY ZONE (Directional Bias) -> RESTRICT DIRECTION
-        btc_filter_msg = ""
-        if btc_trend == 'BEARISH':
-            btc_filter_msg = "📉 BTC BEARISH (Shorts Only)"
-        elif btc_trend == 'BULLISH':
-            btc_filter_msg = "📈 BTC BULLISH (Longs Only)"
-            
-        if btc_filter_msg:
-             pass
-
-        # C. THE BRONX SHIELD (NY Session Protection) 🗽
-        current_hour = datetime.utcnow().hour
+        # CALENDAR FILTER (Dynamic Hardening)
+        # Weekdays (Mon-Fri): Institutions are active. Fakeouts frequent. STRICT MODE.
+        # Weekends (Sat-Sun): Low volume, cleaner ranges. SNIPER MODE.
+        today = datetime.now()
+        is_weekend = today.weekday() >= 5
+        is_weekday = not is_weekend
+        
+        current_hour = today.utcnow().hour
         is_ny_session = 13 <= current_hour < 21
         
+        # Base Settings
         min_score_required = config.MIN_SIGNAL_SCORE
         allow_override = config.ALLOW_MOMENTUM_OVERRIDE
         
+        mode_name = "WEEKEND SNIPER"
+        
+        if is_weekday:
+            mode_name = "INSTITUTIONAL WEEKDAY"
+            # 1. No Momentum Hijacking during Week (Too risky)
+            allow_override = False 
+            # 2. Raise Standard
+            min_score_required = max(min_score_required, 80)
+            
         if is_ny_session:
-            logger.info("🗽 BRONX SHIELD ACTIVE (NY Session): Strict Mode ON. No Overrides. Min Score 85.")
-            min_score_required = 85
-            allow_override = False
+             mode_name += " + BRONX SHIELD"
+             allow_override = False # Double confirm
+             
+        logger.info(f"📅 CALENDAR MODE: {mode_name} | Min Score: {min_score_required} | Override: {allow_override}")
             
         symbols = await self.market.get_top_symbols(limit=None)
         final_candidates = []
         loop = asyncio.get_running_loop()
 
-        # --- PARALLEL ANALYSIS ENGINE (Optimization V2) ---
+        # --- PARALLEL ANALYSIS ENGINE ---
         async def analyze_symbol(symbol):
             try:
                 # Blacklist Check
@@ -246,10 +252,18 @@ class TrendBot:
                 df_daily = await self.market.get_klines(symbol, interval='1d', limit=90)
                 if df.empty or df_daily.empty: return None
                 
-                # 2. Analyze Technicals (CPU Bound -> Thread Pool)
+                # 2. Analyze Technicals
                 tech_signal = await loop.run_in_executor(self.executor, self.detector.analyze, df, df_daily)
-                
                 if not tech_signal: return None
+                
+                # 2b. WEEKDAY VOLUME FILTER (Anti-Trap)
+                # If Weekday, Signal Candle Volume must be > 1.3x Average
+                if is_weekday:
+                    last_vol = df.iloc[-1]['volume']
+                    avg_vol = df['volume'].rolling(20).mean().iloc[-1]
+                    if last_vol < (avg_vol * 1.3):
+                        # Fail: Not enough participation for a weekday breakout
+                        return None
                 
                 # --- MOMENTUM OVERRIDE CHECK ---
                 is_override = False
@@ -264,21 +278,27 @@ class TrendBot:
                     if btc_trend == 'BEARISH' and tech_signal['direction'] == 'LONG': return None
                     if btc_trend == 'BULLISH' and tech_signal['direction'] == 'SHORT': return None
 
-                    # Titan Sentiment
-                    oi_data = await self.market.get_open_interest(symbol, period='1h')
-                    top_ls_data = await self.market.get_top_long_short_ratio(symbol, period='1h')
-                    global_ls_data = await self.market.get_global_long_short_ratio(symbol, period='1h')
-                    sentiment = SentimentAnalyzer.analyze_sentiment(oi_data, top_ls_data, global_ls_data)
-                    
-                    valid_titan = False
-                    if tech_signal['direction'] == 'LONG' and sentiment['signal'] == 'BULLISH':
-                        valid_titan = True
-                        tech_signal['score'] += 10
-                    elif tech_signal['direction'] == 'SHORT' and sentiment['signal'] == 'BEARISH':
-                        valid_titan = True
-                        tech_signal['score'] += 10
+                    # Titan Sentiment (Simplified for speed in parallel)
+                    # We can do full Titan check later or keeping it here if API allows
+                    # For now, let's assume we keep it here but handle errors gracefully
+                    try:
+                        oi_data = await self.market.get_open_interest(symbol, period='1h')
+                        top_ls_data = await self.market.get_top_long_short_ratio(symbol, period='1h')
+                        global_ls_data = await self.market.get_global_long_short_ratio(symbol, period='1h')
+                        sentiment = SentimentAnalyzer.analyze_sentiment(oi_data, top_ls_data, global_ls_data)
                         
-                    if not valid_titan: return None
+                        valid_titan = False
+                        if tech_signal['direction'] == 'LONG' and sentiment['signal'] == 'BULLISH':
+                            valid_titan = True
+                            tech_signal['score'] += 10
+                        elif tech_signal['direction'] == 'SHORT' and sentiment['signal'] == 'BEARISH':
+                            valid_titan = True
+                            tech_signal['score'] += 10
+                            
+                        if not valid_titan: return None
+                    except:
+                        # If Titan API fails, be conservative and skip finding
+                        return None
                 
                 return {
                     'symbol': symbol,
@@ -306,12 +326,21 @@ class TrendBot:
         if top_picks:
             logger.info(f"Found {len(top_picks)} candidates. Processing...")
             for pick in top_picks:
-                if not pick['is_override']:
+                
+                # STABILITY FILTER V5: Trend Alignment
+                # Weekday Rule: MANDATORY ALIGNMENT (No excuses)
+                # Weekend Rule: Skippable for Overrides
+                
+                must_align = True # Default safe
+                if is_weekend and pick['is_override']: must_align = False
+                
+                if must_align:
                     try:
                         df_1h = await self.market.get_klines(pick['symbol'], interval=config.TREND_ALIGN_INTERVAL, limit=config.TREND_ALIGN_EMA + 10)
                         if not df_1h.empty and len(df_1h) > config.TREND_ALIGN_EMA: 
                             ema_200 = df_1h['close'].ewm(span=config.TREND_ALIGN_EMA, adjust=False).mean().iloc[-1]
                             price = df_1h.iloc[-1]['close']
+                            # COUNTER TREND CHECK
                             if pick['signal']['direction'] == 'LONG' and price < ema_200: continue
                             if pick['signal']['direction'] == 'SHORT' and price > ema_200: continue
                     except: pass
