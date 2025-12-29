@@ -208,31 +208,34 @@ class TrendBot:
             return
 
         # CALENDAR FILTER (Dynamic Hardening)
-        # Weekdays (Mon-Fri): Institutions are active. Fakeouts frequent. STRICT MODE.
-        # Weekends (Sat-Sun): Low volume, cleaner ranges. SNIPER MODE.
         today = datetime.now()
         is_weekend = today.weekday() >= 5
         is_weekday = not is_weekend
         
         current_hour = today.utcnow().hour
-        is_ny_session = 13 <= current_hour < 21
+        # USER REQUEST: Protect TOKYO Session (Asian Range/Low Vol) instead of NY.
+        # Tokyo usually 00:00 to 09:00 UTC approx.
+        is_tokyo_session = 0 <= current_hour < 9
         
         # Base Settings
         min_score_required = config.MIN_SIGNAL_SCORE
         allow_override = config.ALLOW_MOMENTUM_OVERRIDE
+        # For Weekday Overrides, we set a higher bar than Weekend
+        weekday_override_threshold = 90 
         
         mode_name = "WEEKEND SNIPER"
         
         if is_weekday:
-            mode_name = "INSTITUTIONAL WEEKDAY"
-            # 1. No Momentum Hijacking during Week (Too risky)
-            allow_override = False 
-            # 2. Raise Standard
-            min_score_required = max(min_score_required, 80)
+            mode_name = "STANDARD WEEKDAY"
+            # 1. Allow Overrides but harder (Score > 90)
+            # 2. Raise Standard Score slightly
+            min_score_required = max(min_score_required, 75)
             
-        if is_ny_session:
-             mode_name += " + BRONX SHIELD"
-             allow_override = False # Double confirm
+        if is_tokyo_session:
+             mode_name += " + TOKYO GUARD"
+             # Strict during Asian Session (Avoid rangy fakeouts)
+             allow_override = False 
+             min_score_required = max(min_score_required, 85)
              
         logger.info(f"📅 CALENDAR MODE: {mode_name} | Min Score: {min_score_required} | Override: {allow_override}")
             
@@ -256,19 +259,22 @@ class TrendBot:
                 tech_signal = await loop.run_in_executor(self.executor, self.detector.analyze, df, df_daily)
                 if not tech_signal: return None
                 
-                # 2b. WEEKDAY VOLUME FILTER (Anti-Trap)
-                # If Weekday, Signal Candle Volume must be > 1.3x Average
-                if is_weekday:
+                # 2b. WEEKDAY VOLUME FILTER (Loosened)
+                # If Weekday, Signal Candle Volume must be > 1.1x Average (Was 1.3x)
+                if is_weekday and not is_weekend:
                     last_vol = df.iloc[-1]['volume']
                     avg_vol = df['volume'].rolling(20).mean().iloc[-1]
-                    if last_vol < (avg_vol * 1.3):
-                        # Fail: Not enough participation for a weekday breakout
+                    if last_vol < (avg_vol * 1.1):
+                        # Fail: Not enough participation
                         return None
                 
                 # --- MOMENTUM OVERRIDE CHECK ---
                 is_override = False
-                if allow_override and tech_signal['score'] >= config.MOMENTUM_SCORE_THRESHOLD:
-                    is_override = True
+                if allow_override:
+                    # Weekday Override needs 90+, Weekend needs Config Default (usually 85/90)
+                    thresh = weekday_override_threshold if is_weekday else config.MOMENTUM_SCORE_THRESHOLD
+                    if tech_signal['score'] >= thresh:
+                        is_override = True
                 
                 # 3. TITAN DATA & CHECKS
                 if not is_override:
@@ -279,8 +285,6 @@ class TrendBot:
                     if btc_trend == 'BULLISH' and tech_signal['direction'] == 'SHORT': return None
 
                     # Titan Sentiment (Simplified for speed in parallel)
-                    # We can do full Titan check later or keeping it here if API allows
-                    # For now, let's assume we keep it here but handle errors gracefully
                     try:
                         oi_data = await self.market.get_open_interest(symbol, period='1h')
                         top_ls_data = await self.market.get_top_long_short_ratio(symbol, period='1h')
