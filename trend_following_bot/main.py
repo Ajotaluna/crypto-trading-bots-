@@ -209,33 +209,24 @@ class TrendBot:
 
         # CALENDAR FILTER (Dynamic Hardening)
         today = datetime.now()
-        is_weekend = today.weekday() >= 5
-        is_weekday = not is_weekend
-        
         current_hour = today.utcnow().hour
-        # USER REQUEST: Protect TOKYO Session (Asian Range/Low Vol) instead of NY.
-        # Tokyo usually 00:00 to 09:00 UTC approx.
+        
+        # USER REQUEST: 
+        # 1. Run "Weekend Logic" (Sniper Mode) 24/7. No extra filters for weekdays.
+        # 2. Protect TOKYO Session (00:00 - 09:00 UTC) but with lower exigencies than before.
         is_tokyo_session = 0 <= current_hour < 9
         
-        # Base Settings
+        # Base Settings (Sniper Mode Defaults)
         min_score_required = config.MIN_SIGNAL_SCORE
         allow_override = config.ALLOW_MOMENTUM_OVERRIDE
-        # For Weekday Overrides, we set a higher bar than Weekend
-        weekday_override_threshold = 90 
         
-        mode_name = "WEEKEND SNIPER"
+        mode_name = "SNIPER MODE (24/7)"
         
-        if is_weekday:
-            mode_name = "STANDARD WEEKDAY"
-            # 1. Allow Overrides but harder (Score > 90)
-            # 2. Raise Standard Score slightly
-            min_score_required = max(min_score_required, 75)
-            
         if is_tokyo_session:
              mode_name += " + TOKYO GUARD"
-             # Strict during Asian Session (Avoid rangy fakeouts)
+             # Tokyo Guard: No Overrides, Moderate Score Requirement
              allow_override = False 
-             min_score_required = max(min_score_required, 85)
+             min_score_required = max(min_score_required, 80) # Softened from 85
              
         logger.info(f"📅 CALENDAR MODE: {mode_name} | Min Score: {min_score_required} | Override: {allow_override}")
             
@@ -259,21 +250,13 @@ class TrendBot:
                 tech_signal = await loop.run_in_executor(self.executor, self.detector.analyze, df, df_daily)
                 if not tech_signal: return None
                 
-                # 2b. WEEKDAY VOLUME FILTER (Loosened)
-                # If Weekday, Signal Candle Volume must be > 1.1x Average (Was 1.3x)
-                if is_weekday and not is_weekend:
-                    last_vol = df.iloc[-1]['volume']
-                    avg_vol = df['volume'].rolling(20).mean().iloc[-1]
-                    if last_vol < (avg_vol * 1.1):
-                        # Fail: Not enough participation
-                        return None
+                # [REMOVED] WEEKDAY VOLUME FILTER
+                # User requested full Weekend Logic always.
                 
                 # --- MOMENTUM OVERRIDE CHECK ---
                 is_override = False
                 if allow_override:
-                    # Weekday Override needs 90+, Weekend needs Config Default (usually 85/90)
-                    thresh = weekday_override_threshold if is_weekday else config.MOMENTUM_SCORE_THRESHOLD
-                    if tech_signal['score'] >= thresh:
+                    if tech_signal['score'] >= config.MOMENTUM_SCORE_THRESHOLD:
                         is_override = True
                 
                 # 3. TITAN DATA & CHECKS
