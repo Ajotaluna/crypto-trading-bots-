@@ -11,7 +11,7 @@ class Config:
     # Entry Criteria (STRICT)
     import os
     # LOOSE_MODE REMOVED - ONLY STRICT TRADING ALLOWED
-    MIN_SIGNAL_SCORE = 80.0          # Only High Quality Quality
+    MIN_SIGNAL_SCORE = 75.0          # Restored to 'Standard Weekday' level for 24/7 Activity
     REQUIRE_VOLUME_SURGE = True      # Mandatory Volume
     MIN_VOLUME_MULTIPLIER = 1.5      # Significant surge needed
     
