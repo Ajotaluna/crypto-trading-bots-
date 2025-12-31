@@ -316,10 +316,8 @@ class TrendBot:
                 
                 # STABILITY FILTER V5: Trend Alignment
                 # Weekday Rule: MANDATORY ALIGNMENT (No excuses)
-                # Weekend Rule: Skippable for Overrides
-                
-                must_align = True # Default safe
-                if is_weekend and pick['is_override']: must_align = False
+                # Weekend Rule (Now 24/7): Skippable for Overrides
+                if pick['is_override']: must_align = False
                 
                 if must_align:
                     try:
