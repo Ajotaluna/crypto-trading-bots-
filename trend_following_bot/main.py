@@ -457,8 +457,15 @@ class TrendBot:
         # We want to lose exactly RISK_PER_TRADE_PCT if SL is hit.
         amount = self.market.calculate_position_size(symbol, price, sl)
         
+        # LOW CAPITAL OVERRIDE: Force Minimum Size $12
+        # User Strategy: Ensure size is enough for 50% Partial Close ($6) > Min Notional ($5)
+        if amount < 12.0:
+            logger.info(f"⚠️ LOW CAP SIZE ADJUST: Boosting {symbol} position from ${amount:.2f} to $12.00 to enable Partial TP.")
+            amount = 12.0
+
+        # Safety Check (should be covered by above, but keeping for logic integrity)
         if amount < 6.0:
-            logger.warning(f"⚠️ Position Size {amount:.2f} too small for {symbol} (Risk too low or SL too tight?). Skipping.")
+            logger.warning(f"⚠️ Position Size {amount:.2f} too small for {symbol}. Skipping.")
             return
 
         # Check affordability (Margin)
