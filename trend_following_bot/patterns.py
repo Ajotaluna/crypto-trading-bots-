@@ -228,17 +228,22 @@ class PatternDetector:
         if context['trend'] == 'BULLISH': allowed_direction = 'LONG'
         if context['trend'] == 'BEARISH': allowed_direction = 'SHORT'
         
+        from config import config # Late import to avoid circular dependency
+        
         # 3. BREAKOUT DETECTION (15m) matching Macro Trend
         # Calculate Volume Velocity (Speculative Bulla)
         vol_velocity = curr['volume'] / (curr['vol_ma'] + 1) # +1 to avoid div by zero
         is_vol_shock = vol_velocity > 4.0 # 400% Volume Spike (Hyper-Strict)
         
         is_vol_surge = curr['volume'] > (curr['vol_ma'] * 1.5)
+        # CONFIG CHECK: If Volume Surge is NOT required, we treat it as confirmed even if False.
+        surge_confirmed = is_vol_surge or (not config.REQUIRE_VOLUME_SURGE)
+        
         is_trend_strong = curr['adx'] > 25
         
         # LONG SETUP
         if allowed_direction in ['LONG', 'BOTH']:
-            if curr['close'] > curr['upper_bb'] and is_vol_surge:
+            if curr['close'] > curr['upper_bb'] and surge_confirmed:
                 # Require ADX and Alignment
                 if is_trend_strong and (curr['close'] > curr['ema_20'] > curr['ema_50']):
                     # Final Check: Not hitting Daily Resistance
