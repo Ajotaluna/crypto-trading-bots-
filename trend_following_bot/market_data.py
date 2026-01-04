@@ -549,3 +549,6 @@ class MarketData:
                 else:
                     logger.info(f"[REAL] CLOSE {symbol} | {reason}")
                     del self.positions[symbol]
+            else:
+                logger.error(f"❌ [CRITICAL] CLOSE FAILED for {symbol} ({reason}). API Rejected Order. Position Stuck open.")
+

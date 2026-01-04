@@ -563,13 +563,23 @@ class TrendBot:
 
             # B. PARTIAL PROFIT at +1.2% Profit (Bank 50%)
             if current_roi >= 0.012 and not has_taken_partial:
-                # Close 50% of CURRENT size
+                # Calculate 50% Value
                 qty_to_close = pos['amount'] * 0.5
-                await self.market.close_position(symbol, f"HARVESTER Partial TP (+{current_roi*100:.2f}%)", params={'qty': qty_to_close})
+                value_to_close = qty_to_close * current_price
                 
-                pos['amount'] -= qty_to_close # Update local tracking
-                pos['partial_taken'] = True
-                logger.info(f"🌾 HARVESTER: Banking 50% Profit on {symbol} @ {current_price:.5f} (+{current_roi*100:.2f}%)")
+                # SMART CLOSE CHECK (Small Accounts Fix)
+                # If 50% is less than $7 (Risk of rejection), CLOSE EVERYTHING.
+                if value_to_close < 7.0:
+                     logger.info(f"🌾 SMART HARVESTER: Partial value (${value_to_close:.2f}) too small. Closing FULL position to secure profit.")
+                     await self.market.close_position(symbol, f"SMART TP (Full) (+{current_roi*100:.2f}%)")
+                     # Position is gone, break loop to avoid further checks
+                     continue
+                else:
+                    # Standard 50% Close
+                    await self.market.close_position(symbol, f"HARVESTER Partial TP (+{current_roi*100:.2f}%)", params={'qty': qty_to_close})
+                    pos['amount'] -= qty_to_close # Update local tracking
+                    pos['partial_taken'] = True
+                    logger.info(f"🌾 HARVESTER: Banking 50% Profit on {symbol} @ {current_price:.5f} (+{current_roi*100:.2f}%)")
 
             # 1c. THE BLOODHOUND V3 (ATR Trailing Stop)
             # Only trail IF we have already locked Break Even (Don't choke early trade)
