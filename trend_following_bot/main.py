@@ -207,27 +207,48 @@ class TrendBot:
             logger.warning("🛡️ KING'S GUARD: BTC IS CRASHING! Pausing Scans.")
             return
 
-        # CALENDAR FILTER (Dynamic Hardening)
+        # CALENDAR FILTER & PROFIT STOP (USER REQUEST)
         today = datetime.now()
         current_hour = today.utcnow().hour
+        is_tokyo_blackout = 3 <= current_hour < 10
         
-        # USER REQUEST: 
-        # 1. Run "Weekend Logic" (Sniper Mode) 24/7. No extra filters for weekdays.
-        # 2. Protect TOKYO Session (00:00 - 09:00 UTC) but with lower exigencies than before.
-        is_tokyo_session = 4 <= current_hour < 9
+        # Check Daily Profit Target
+        daily_target_hit = False
+        try:
+            current_pnl_pct = self.pnl_tracker.current_pnl_pct * 100 # Convert to %
+            if current_pnl_pct >= config.DAILY_PROFIT_TARGET_PCT:
+                daily_target_hit = True
+        except:
+            pass # PnL tracker might not be ready
+
+        # ------------------------------------------------------------------
+        # BLACKOUT PROTOCOL: STOP EVERYTHING
+        # 1. During Tokyo Session (00:00 - 09:00 UTC)
+        # 2. If Daily Target is HIT (Wait until next day 09:00)
+        # ------------------------------------------------------------------
+        if is_tokyo_blackout or daily_target_hit:
+            reason = "TOKYO SESSION" if is_tokyo_blackout else "DAILY TARGET HIT"
+            logger.info(f"⛔ BLACKOUT ({reason}): Suspending Operations until 09:00 UTC.")
+            
+            # FORCE CLOSE ALL OPEN POSITIONS
+            if self.market.positions:
+                logger.warning(f"⚠️ FORCE CLOSING {len(self.market.positions)} positions for Blackout...")
+                for sym in list(self.market.positions.keys()):
+                    await self.market.close_position(sym, f"BLACKOUT EXIT ({reason})")
+            
+            return # STOP ENGINE
+
+        # ------------------------------------------------------------------
+        # ACTIVE TRADING MODE (09:00 - 23:59 UTC)
+        # ------------------------------------------------------------------
         # Base Settings (Sniper Mode Defaults)
         min_score_required = config.MIN_SIGNAL_SCORE
         allow_override = config.ALLOW_MOMENTUM_OVERRIDE
         
-        mode_name = "SNIPER MODE (24/7)"
+        mode_name = "SNIPER MODE (DAYTIME)"
         
-        if is_tokyo_session:
-             mode_name += " + TOKYO GUARD"
-             # Tokyo Guard: No Overrides, Moderate Score Requirement
-             allow_override = False 
-             min_score_required = max(min_score_required, 80) # Softened from 85
-             
-        logger.info(f"📅 CALENDAR MODE: {mode_name} | Min Score: {min_score_required} | Override: {allow_override}")
+        # No more Tokyo Guard logic needed since we don't trade Tokyo.
+        # logger.info(f"📅 CALENDAR MODE: {mode_name} | Min Score: {min_score_required} | Override: {allow_override}")
             
         symbols = await self.market.get_top_symbols(limit=None)
         final_candidates = []
@@ -575,10 +596,14 @@ class TrendBot:
                      continue
                 else:
                     # Standard 50% Close
-                    await self.market.close_position(symbol, f"HARVESTER Partial TP (+{current_roi*100:.2f}%)", params={'qty': qty_to_close})
-                    pos['amount'] -= qty_to_close # Update local tracking
-                    pos['partial_taken'] = True
-                    logger.info(f"🌾 HARVESTER: Banking 50% Profit on {symbol} @ {current_price:.5f} (+{current_roi*100:.2f}%)")
+                    result = await self.market.close_position(symbol, f"HARVESTER Partial TP (+{current_roi*100:.2f}%)", params={'qty': qty_to_close})
+                    
+                    if result:
+                        pos['amount'] -= qty_to_close # Update local tracking
+                        pos['partial_taken'] = True
+                        logger.info(f"🌾 HARVESTER: Banking 50% Profit on {symbol} @ {current_price:.5f} (+{current_roi*100:.2f}%)")
+                    else:
+                        logger.warning(f"⚠️ PARTIAL CLOSE FAILED for {symbol}. API rejected the order (Check logs for reason). Retrying next tick...")
 
             # 1c. THE BLOODHOUND V3 (ATR Trailing Stop)
             # Only trail IF we have already locked Break Even (Don't choke early trade)
