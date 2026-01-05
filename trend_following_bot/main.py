@@ -214,8 +214,8 @@ class TrendBot:
         # USER REQUEST: 
         # 1. Run "Weekend Logic" (Sniper Mode) 24/7. No extra filters for weekdays.
         # 2. Protect TOKYO Session (00:00 - 09:00 UTC) but with lower exigencies than before.
-        is_tokyo_session = 0 <= current_hour < 9
-        
+        is_tokyo_session = 4 <= current_hour < 9
+        m
         # Base Settings (Sniper Mode Defaults)
         min_score_required = config.MIN_SIGNAL_SCORE
         allow_override = config.ALLOW_MOMENTUM_OVERRIDE
