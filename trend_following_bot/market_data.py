@@ -528,6 +528,7 @@ class MarketData:
                 logger.info(f"🧬 [TRACKER] CLOSED {symbol} | Result: {outcome} ({pnl_pct*100:.2f}%) | Reason: {reason} | Time: {duration:.1f}m")
                 del self.positions[symbol]
             
+            return {'status': 'FILLED', 'avgPrice': price, 'simulated': True}
         else:
             # REAL CLOSE
             side_param = 'SELL' if pos['side'] == 'LONG' else 'BUY'

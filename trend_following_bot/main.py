@@ -569,8 +569,8 @@ class TrendBot:
             
             current_roi = pnl_pct
             
-            # A. MOVE TO BREAK EVEN at +0.6% Profit (Protects against quick reversals)
-            if current_roi >= 0.006 and not has_moved_to_be:
+            # A. MOVE TO BREAK EVEN at +1.0% Profit (Relaxed from 0.6% to let trades breathe)
+            if current_roi >= 0.010 and not has_moved_to_be:
                 # Move SL to Entry (Plus small buffer 0.1% for fees)
                 buffer = 0.001
                 new_sl = pos['entry_price'] * (1 + buffer if pos['side'] == 'LONG' else 1 - buffer)
@@ -579,7 +579,7 @@ class TrendBot:
                 pos['sl'] = new_sl
                 pos['be_locked'] = True
                 
-                logger.info(f"🛡️ HARVESTER: Locked BREAK EVEN for {symbol} @ {new_sl:.4f} (ROI > 0.6%)")
+                logger.info(f"🛡️ HARVESTER: Locked BREAK EVEN for {symbol} @ {new_sl:.4f} (ROI > 1.0%)")
 
             # B. PARTIAL PROFIT at +1.2% Profit (Bank 50%)
             if current_roi >= 0.012 and not has_taken_partial:
