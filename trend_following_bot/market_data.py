@@ -421,7 +421,7 @@ class MarketData:
             except Exception as e:
                 logger.warning(f"Setup Warning (Lev/Margin): {e}") # Don't crash, but tell us why
 
-            # 1. Place Market Order
+            # 1. Prepare Parameters
             side_param = 'BUY' if side == 'LONG' else 'SELL'
             
             # Dynamic Precision Rounding
@@ -432,66 +432,51 @@ class MarketData:
             qty_val = self._round_step_size(amount, step_size)
             qty = f"{qty_val}" # Auto format
             
+            # Round SL/TP Prices (Pre-calc for Atomic Order)
+            sl_rounded = self._round_price(sl_price, tick_size)
+            tp_rounded = self._round_price(tp_price, tick_size)
+            
             # Double check against min qty (optional but good)
             if qty_val <= 0:
                 logger.error(f"Quantity {qty_val} too small for {symbol}")
                 return None
-
-            order = await self._signed_request('POST', '/fapi/v1/order', {
+            
+            # 2. Place ATOMIC Order (Entry + SL + TP)
+            # "One-Way Mode" supports sending stops with the order.
+            params = {
                 'symbol': symbol,
                 'side': side_param,
                 'type': 'MARKET',
-                'quantity': qty
-            })
+                'quantity': qty,
+                'stopLossPrice': f"{sl_rounded}",
+                'takeProfitPrice': f"{tp_rounded}"
+            }
             
-            if order and not isinstance(order, list): # Check if valid dict
-                # Handle avgPrice=0 from Binance (Market orders)
-                avg_price = float(order.get('avgPrice', 0.0))
-                entry_price = avg_price if avg_price > 0 else price
+            try:
+                order = await self._signed_request('POST', '/fapi/v1/order', params)
                 
-                # --- PLACING HARD STOPS (SAFETY) ---
-                try:
-                    # Determine Exit Side
-                    exit_side = 'SELL' if side == 'LONG' else 'BUY'
+                if order and not isinstance(order, list): # Check if valid dict
+                    # Handle avgPrice=0 from Binance (Market orders)
+                    avg_price = float(order.get('avgPrice', 0.0))
+                    entry_price = avg_price if avg_price > 0 else price
                     
-                    # Round SL/TP Prices
-                    sl_rounded = self._round_price(sl_price, tick_size)
-                    tp_rounded = self._round_price(tp_price, tick_size)
-                    
-                    # 1. STOP LOSS
-                    await self._signed_request('POST', '/fapi/v1/order', {
+                    self.positions[symbol] = {
                         'symbol': symbol,
-                        'side': exit_side,
-                        'type': 'STOP_MARKET',
-                        'stopPrice': f"{sl_rounded}",
-                        'closePosition': 'true' # Closes entire position
-                    })
-                    
-                    # 2. TAKE PROFIT
-                    await self._signed_request('POST', '/fapi/v1/order', {
-                        'symbol': symbol,
-                        'side': exit_side,
-                        'type': 'TAKE_PROFIT_MARKET',
-                        'stopPrice': f"{tp_rounded}",
-                        'closePosition': 'true' # Closes entire position
-                    })
-                    logger.info(f"Protective Orders (Hard SL/TP) placed for {symbol}")
-                    
-                except Exception as e:
-                    logger.error(f"Failed to place Hard Stops for {symbol}: {e}")
-                    # Continue anyway, bot will manage soft stops
+                        'side': side,
+                        'entry_price': entry_price,
+                        'amount': float(qty),
+                        'sl': sl_price,
+                        'tp': tp_price,
+                        'entry_time': datetime.now()
+                    }
+                    logger.info(f"✅ [REAL] ATOMIC ENTRY {side} {symbol} @ {entry_price} | SL: {sl_rounded} | TP: {tp_rounded}")
+                    return self.positions[symbol]
                 
-                self.positions[symbol] = {
-                    'symbol': symbol,
-                    'side': side,
-                    'entry_price': entry_price,
-                    'amount': float(qty),
-                    'sl': sl_price,
-                    'tp': tp_price,
-                    'entry_time': datetime.now()
-                }
-                logger.info(f"[REAL] OPEN {side} {symbol} @ {entry_price} | Lev: {config.LEVERAGE if hasattr(config, 'LEVERAGE') else 5}x | SL: {sl_price:.4f} (-{config.STOP_LOSS_PCT}%) | TP: {tp_price:.4f}")
-                return self.positions[symbol]
+            except Exception as e:
+                logger.error(f"❌ ATOMIC ORDER FAILED for {symbol}: {e}")
+                return None
+            
+            return None
             return None
 
     async def close_position(self, symbol, reason, params=None):
