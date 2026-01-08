@@ -533,12 +533,26 @@ class MarketData:
             # REAL CLOSE
             side_param = 'SELL' if pos['side'] == 'LONG' else 'BUY'
             
+            # --- FIX: ROUND QUANTITY TO STEP SIZE ---
+            # 1. Get Filters
+            info = next((item for item in self.exchange_info['symbols'] if item['symbol'] == symbol), None)
+            if not info:
+                 logger.error(f"Cannot close {symbol}: Exchange info missing.")
+                 return None
+                 
+            lot_filter = next((f for f in info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
+            step_size = float(lot_filter['stepSize'])
+            
+            # 2. Round
+            qty_val = self._round_step_size(qty_to_close, step_size)
+            qty_str = f"{qty_val}" # Format as string
+            
             # ReduceOnly order
             order = await self._signed_request('POST', '/fapi/v1/order', {
                 'symbol': symbol,
                 'side': side_param,
                 'type': 'MARKET',
-                'quantity': qty_to_close,
+                'quantity': qty_str, # Use Rounded String
                 'reduceOnly': 'true'
             })
             

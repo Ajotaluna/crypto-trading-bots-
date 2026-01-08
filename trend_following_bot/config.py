@@ -53,7 +53,7 @@ class Config:
     # ROI Targets (Fallback/Initial)
     # Price Movement = ROI / Leverage
     STOP_LOSS_PCT = 1.5              # Base Stop distance (will be dynamic)
-    TAKE_PROFIT_PCT = 4.5            # 1:3 RR base expectation
+    TAKE_PROFIT_PCT = 25.0           # INFINITY MODE: 25% Ceiling (Let Trailing Stop exit)
     
     MAX_OPEN_POSITIONS = 10          # Restore missing config
     CAPITAL_PER_TRADE_PCT = 0.0      # DEPRECATED in favor of Risk Sizing

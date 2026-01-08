@@ -226,17 +226,26 @@ class TrendBot:
         # 1. During Tokyo Session (00:00 - 09:00 UTC)
         # 2. If Daily Target is HIT (Wait until next day 09:00)
         # ------------------------------------------------------------------
-        if is_tokyo_blackout or daily_target_hit:
-            reason = "TOKYO SESSION" if is_tokyo_blackout else "DAILY TARGET HIT"
-            logger.info(f"⛔ BLACKOUT ({reason}): Suspending Operations until 09:00 UTC.")
-            
-            # FORCE CLOSE ALL OPEN POSITIONS
-            if self.market.positions:
-                logger.warning(f"⚠️ FORCE CLOSING {len(self.market.positions)} positions for Blackout...")
-                for sym in list(self.market.positions.keys()):
-                    await self.market.close_position(sym, f"BLACKOUT EXIT ({reason})")
-            
-            return # STOP ENGINE
+        # ------------------------------------------------------------------
+        # 1. TOKYO BLACKOUT (STRICT STOP)
+        # ------------------------------------------------------------------
+        if is_tokyo_blackout:
+             logger.info(f"⛔ BLACKOUT (TOKYO): Suspending Operations until 09:00 UTC.")
+             
+             # FORCE CLOSE ALL OPEN POSITIONS
+             if self.market.positions:
+                 logger.warning(f"⚠️ FORCE CLOSING {len(self.market.positions)} positions for Blackout...")
+                 for sym in list(self.market.positions.keys()):
+                     await self.market.close_position(sym, "BLACKOUT EXIT")
+             
+             return # STOP ENGINE
+
+        # ------------------------------------------------------------------
+        # 2. DAILY TARGET SOFT LANDING (INFINITY MODE)
+        # ------------------------------------------------------------------
+        if daily_target_hit:
+             logger.info(f"✅ DAILY TARGET HIT ({current_pnl_pct:.2f}%). Soft Landing: Pausing New Scans, Letting Runners Run.")
+             return # STOP SCANNING (But do NOT close existing positions)
 
         # ------------------------------------------------------------------
         # ACTIVE TRADING MODE (09:00 - 23:59 UTC)
