@@ -211,7 +211,10 @@ class PatternDetector:
              context = self.analyze_daily_structure(df_daily)
         
         df = TechnicalAnalysis.calculate_indicators(df_15m)
-        curr = df.iloc[-1]
+        
+        # USE CLOSED CANDLE (Index -2) to avoid Repainting/Wick Fakeouts.
+        # Index -1 is the live forming candle. We wait for confirmation.
+        curr = df.iloc[-2]
         
         signal = {
             'type': None,
