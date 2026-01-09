@@ -441,22 +441,23 @@ class MarketData:
                 logger.error(f"Quantity {qty_val} too small for {symbol}")
                 return None
             
-            # 2. Place ATOMIC Order (Entry + SL + TP)
-            # "One-Way Mode" supports sending stops with the order.
+            # 2. SEPARATE EXECUTION (Zero Tolerance Mode)
+            # We abandoned Atomic params (stopLossPrice) because they are often ignored by Binance 
+            # in One-Way Mode / Market Orders, leaving trades naked.
+            
+            # A. ENTRY
             params = {
                 'symbol': symbol,
                 'side': side_param,
                 'type': 'MARKET',
-                'quantity': qty,
-                'stopLossPrice': f"{sl_rounded}",
-                'takeProfitPrice': f"{tp_rounded}"
+                'quantity': qty
             }
             
             try:
+                # 1. Place Entry
                 order = await self._signed_request('POST', '/fapi/v1/order', params)
                 
-                if order and not isinstance(order, list): # Check if valid dict
-                    # Handle avgPrice=0 from Binance (Market orders)
+                if order and not isinstance(order, list):
                     avg_price = float(order.get('avgPrice', 0.0))
                     entry_price = avg_price if avg_price > 0 else price
                     
@@ -469,15 +470,58 @@ class MarketData:
                         'tp': tp_price,
                         'entry_time': datetime.now()
                     }
-                    logger.info(f"✅ [REAL] ATOMIC ENTRY {side} {symbol} @ {entry_price} | SL: {sl_rounded} | TP: {tp_rounded}")
-                    return self.positions[symbol]
+                    
+                    # 2. PLACING HARD STOPS (Immediate Follow-up)
+                    try:
+                         exit_side = 'SELL' if side == 'LONG' else 'BUY'
+                         sl_rounded = self._round_price(sl_price, tick_size)
+                         tp_rounded = self._round_price(tp_price, tick_size)
+                         
+                         # STOP LOSS (Critical)
+                         await self._signed_request('POST', '/fapi/v1/order', {
+                            'symbol': symbol,
+                            'side': exit_side,
+                            'type': 'STOP_MARKET',
+                            'stopPrice': f"{sl_rounded}",
+                            'closePosition': 'true'
+                         })
+                         
+                         # TAKE PROFIT
+                         await self._signed_request('POST', '/fapi/v1/order', {
+                            'symbol': symbol,
+                            'side': exit_side,
+                            'type': 'TAKE_PROFIT_MARKET',
+                            'stopPrice': f"{tp_rounded}",
+                            'closePosition': 'true'
+                         })
+                         
+                         logger.info(f"✅ [REAL] ENTRY + STOPS SUCCESS {symbol} @ {entry_price} | SL: {sl_rounded} | TP: {tp_rounded}")
+                         return self.positions[symbol]
+                         
+                    except Exception as e_stops:
+                        # ZERO TOLERANCE: Stops Failed -> KILL TRADE
+                        logger.error(f"🛑 CRITICAL: STOP LOSS FAILED for {symbol}: {e_stops}. EMERGENCY CLOSING.")
+                        await self.close_position(symbol, "SAFETY: STOPS FAILED")
+                        del self.positions[symbol] # Ensure it's gone from tracker
+                        return None
                 
             except Exception as e:
-                logger.error(f"❌ ATOMIC ORDER FAILED for {symbol}: {e}")
+                logger.error(f"❌ ENTRY FAILED for {symbol}: {e}")
                 return None
             
             return None
-            return None
+    
+    async def emergency_close_all(self, reason="EMERGENCY"):
+        """KILL SWITCH: Close ALL positions immediately"""
+        if not self.positions: return
+        logger.warning(f"🚨 INITIATING EMERGENCY CLOSE ALL: {reason}")
+        
+        tasks = []
+        for sym in list(self.positions.keys()):
+            tasks.append(self.close_position(sym, reason))
+            
+        await asyncio.gather(*tasks)
+        logger.info("🚨 EMERGENCY CLOSE COMPLETE.")
 
     async def close_position(self, symbol, reason, params=None):
         """Close position (Mock or Real)"""
@@ -519,14 +563,10 @@ class MarketData:
             side_param = 'SELL' if pos['side'] == 'LONG' else 'BUY'
             
             # --- FIX: ROUND QUANTITY TO STEP SIZE ---
-            # 1. Get Filters
-            info = next((item for item in self.exchange_info['symbols'] if item['symbol'] == symbol), None)
-            if not info:
-                 logger.error(f"Cannot close {symbol}: Exchange info missing.")
-                 return None
-                 
-            lot_filter = next((f for f in info['filters'] if f['filterType'] == 'LOT_SIZE'), None)
-            step_size = float(lot_filter['stepSize'])
+            # --- FIX: ROUND QUANTITY TO STEP SIZE ---
+            # 1. Get Precision Rules (Using Helper)
+            prec = await self._get_symbol_precision(symbol)
+            step_size = prec['q']
             
             # 2. Round
             qty_val = self._round_step_size(qty_to_close, step_size)
