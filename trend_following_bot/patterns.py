@@ -4,13 +4,15 @@ Core logic for Trend Following: Breakouts, Reversals, Major Resistance.
 """
 import pandas as pd
 import numpy as np
+# FIX: Robust Import for MathEngine
 try:
-    from .math_engine import MathEngine # Statistical Core
+    from math_engine import MathEngine
 except ImportError:
     try:
-        from trend_following_bot.math_engine import MathEngine
+        from .math_engine import MathEngine
     except ImportError:
-        from math_engine import MathEngine
+        # Fallback for when running as a module from outside
+        from trend_following_bot.math_engine import MathEngine
 
 class SentimentAnalyzer:
     """
