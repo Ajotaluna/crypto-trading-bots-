@@ -3,4 +3,5 @@ numpy
 requests
 
 python-binance
+scipy
 # Optional: ccxt if we switch later, but using requests for now
