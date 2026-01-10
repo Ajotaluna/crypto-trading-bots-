@@ -11,6 +11,8 @@ from datetime import datetime
 from config import config
 from market_data import MarketData
 from patterns import PatternDetector, SentimentAnalyzer
+from win_rate_tracker import WinRateTracker
+import pandas as pd
 from blacklist_manager import BlacklistManager
 
 # Setup logging
@@ -34,7 +36,11 @@ class TrendBot:
         self.running = True
         self.start_balance = 0.0
         self.watchlist = {} # Symbol -> Score
-        self.pending_entries = {} # Symbol -> {signal, df, time, trigger_price}
+        self.pending_entries = {} # {symbol: {signal, time, trigger_price}}
+        
+        # SCOREBOARD (Persistent Stats)
+        self.tracker = WinRateTracker()
+        self.tracker.log_summary()
         self.executor = concurrent.futures.ProcessPoolExecutor(max_workers=4)
 
     def __del__(self):
@@ -203,9 +209,13 @@ class TrendBot:
         # 0. THE KING'S GUARD (BTC Trend Filter)
         btc_trend = await self.market.get_btc_trend()
         
-        if btc_trend == 'CRASH':
-            logger.warning("🛡️ KING'S GUARD: BTC IS CRASHING! Pausing Scans.")
+        if btc_trend < -0.01: # Check for CRASH (Net Drop > 1%)
+            logger.warning(f"🛡️ KING'S GUARD: BTC IS CRASHING ({btc_trend*100:.2f}%)! Pausing Scans.")
             return
+
+        # 0b. THE WATCHTOWER (Market Breadth)
+        breadth = await self.market.get_market_breadth(limit=50)
+        logger.info(f"🔭 WATCHTOWER: Market Sentiment: {breadth['bullish_pct']:.1f}% Bullish ({breadth['sentiment']})")
 
         # CALENDAR FILTER & PROFIT STOP (USER REQUEST)
         today = datetime.now()
@@ -276,7 +286,7 @@ class TrendBot:
                 if df.empty or df_daily.empty: return None
                 
                 # 2. Analyze Technicals
-                tech_signal = await loop.run_in_executor(self.executor, self.detector.analyze, df, df_daily)
+                tech_signal = await loop.run_in_executor(self.executor, self.detector.analyze, df, df_daily, btc_trend)
                 if not tech_signal: return None
                 
                 # [REMOVED] WEEKDAY VOLUME FILTER
@@ -292,9 +302,10 @@ class TrendBot:
                 if not is_override:
                     if tech_signal['score'] < min_score_required: return None
                     
-                    # King's Guard
-                    if btc_trend == 'BEARISH' and tech_signal['direction'] == 'LONG': return None
-                    if btc_trend == 'BULLISH' and tech_signal['direction'] == 'SHORT': return None
+                    
+                    # King's Guard (Already handled in analyze, but double check doesn't hurt)
+                    if btc_trend < -0.01 and tech_signal['direction'] == 'LONG': return None
+                    if btc_trend > 0.01 and tech_signal['direction'] == 'SHORT': return None
 
                     # Titan Sentiment (Simplified for speed in parallel)
                     try:
@@ -484,7 +495,21 @@ class TrendBot:
 
         # 3. THE RISK VAULT: Calculate Position Size based on Risk
         # We want to lose exactly RISK_PER_TRADE_PCT if SL is hit.
-        amount = self.market.calculate_position_size(symbol, price, sl)
+        base_amount = self.market.calculate_position_size(symbol, price, sl)
+        
+        # 4. CASINO MANAGER (Kelly Lite Sizing)
+        # Scale the size based on Score Confidence
+        scaler = 1.0
+        score = signal.get('score', 0)
+        
+        if score >= 90:
+             scaler = 1.66 # Boost Risk to ~2.5% (assuming base is 1.5%)
+        elif score >= 80:
+             scaler = 1.33 # Boost Risk to ~2.0%
+        elif score < 75:
+             scaler = 0.66 # Reduce Risk to ~1.0%
+             
+        amount = base_amount * scaler
         
         # LOW CAPITAL OVERRIDE: Force Minimum Size $12
         # User Strategy: Ensure size is enough for 50% Partial Close ($6) > Min Notional ($5)
@@ -547,6 +572,12 @@ class TrendBot:
                 if current_price <= pos['sl']:
                     logger.warning(f"🛑 STOP LOSS HIT: {symbol} at {current_price}")
                     self.blacklist.record_loss(symbol) # Report Loss
+                    
+                    # SCOREBOARD UPDATE
+                    roi = (current_price - pos['entry_price']) / pos['entry_price']
+                    pnl_usdt = roi * pos['amount'] * config.LEVERAGE
+                    self.tracker.record_trade(pnl_usdt, symbol)
+                    
                     await self.market.close_position(symbol, "STOP LOSS")
                     continue
                 if current_price >= pos['tp']:
@@ -560,6 +591,11 @@ class TrendBot:
                     await self.market.close_position(symbol, "STOP LOSS")
                     continue
                 if current_price <= pos['tp']:
+                    # SCOREBOARD UPDATE
+                    roi = (pos['entry_price'] - current_price) / pos['entry_price']
+                    pnl_usdt = roi * pos['amount'] * config.LEVERAGE # Estimating
+                    self.tracker.record_trade(pnl_usdt, symbol)
+                    
                     await self.market.close_position(symbol, "TAKE PROFIT")
                     continue
             

@@ -4,6 +4,10 @@ Core logic for Trend Following: Breakouts, Reversals, Major Resistance.
 """
 import pandas as pd
 import numpy as np
+try:
+    from .math_engine import MathEngine # Statistical Core
+except ImportError:
+    from trend_following_bot.math_engine import MathEngine
 
 class SentimentAnalyzer:
     """
@@ -149,6 +153,17 @@ class TechnicalAnalysis:
             df['dx'] = np.where(dx_denom != 0, (abs(df['di_plus'] - df['di_minus']) / dx_denom) * 100, 0)
             df['adx'] = df['dx'].ewm(alpha=alpha, adjust=False).mean()
             df['adx'] = df['adx'].fillna(0)
+            
+            # VOLUME DELTA (Net Buy/Sell Pressure)
+            # taker_buy_vol is passed from MarketData
+            if 'taker_buy_vol' in df.columns:
+                 # Delta = Buy Vol - Sell Vol (Sell Vol = Total - Buy Vol)
+                 # Delta = Buy - (Total - Buy) = 2*Buy - Total
+                 df['volume_delta'] = (2 * df['taker_buy_vol']) - df['volume']
+                 df['cum_delta'] = df['volume_delta'].cumsum() # For divergence?
+            else:
+                 df['volume_delta'] = 0
+            
         except:
             df['adx'] = 0
         
@@ -201,7 +216,7 @@ class PatternDetector:
             'low_30d': lowest_low
         }
 
-    def analyze(self, df_15m, df_daily=None):
+    def analyze(self, df_15m, df_daily=None, btc_trend=0.0):
         """Analyze for signals with Historical Context"""
         if len(df_15m) < 50: return None
         
@@ -209,6 +224,9 @@ class PatternDetector:
         context = {'trend': 'NEUTRAL'}
         if df_daily is not None:
              context = self.analyze_daily_structure(df_daily)
+        
+        # KING'S GUARD: Inject BTC Trend
+        context['btc_trend'] = btc_trend
         
         df = TechnicalAnalysis.calculate_indicators(df_15m)
         
@@ -225,13 +243,35 @@ class PatternDetector:
         }
         
         # 2. STRICT TREND FILTER ( The Historian )
-        # If Daily says BEARISH, we FORBID Longs.
         # If Daily says BULLISH, we FORBID Shorts.
         allowed_direction = 'BOTH'
         if context['trend'] == 'BULLISH': allowed_direction = 'LONG'
         if context['trend'] == 'BEARISH': allowed_direction = 'SHORT'
         
-        from config import config # Late import to avoid circular dependency
+        # ----------------------------------------------------
+        # THE KING'S GUARD (BTC Veto)
+        # ----------------------------------------------------
+        btc_trend = context.get('btc_trend', 0.0) # % Change 1H
+        
+        if btc_trend < -0.01: # BTC Down > 1% in hour
+            if allowed_direction == 'LONG':
+                 # VETO LONG
+                 allowed_direction = 'NONE'
+                 signal['reason'].append(f"VETO: BTC Crash ({btc_trend*100:.2f}%)")
+        
+        elif btc_trend > 0.01: # BTC Up > 1% in hour
+             if allowed_direction == 'SHORT':
+                 # VETO SHORT
+                 allowed_direction = 'NONE'
+                 signal['reason'].append(f"VETO: BTC Pump ({btc_trend*100:.2f}%)")
+                 
+        if allowed_direction == 'NONE':
+             return None # Safety First
+        
+        try:
+            from config import config # Late import to avoid circular dependency
+        except ImportError:
+            from trend_following_bot.config import config
         
         # 3. BREAKOUT DETECTION (15m) matching Macro Trend
         # Calculate Volume Velocity (Speculative Bulla)
@@ -280,6 +320,75 @@ class PatternDetector:
                         signal['direction'] = 'SHORT'
                         signal['score'] = 90
                         signal['reason'].append(f'Macro {context["trend"]} + Breakdown')
+        
+        # ----------------------------------------------------
+        # 4. MATH ENGINE: STATISTICAL VALIDATION (The Quants)
+        # ----------------------------------------------------
+        if signal['score'] > 0:
+            math_score = 0
+            reasons = []
+            
+            # A. Z-SCORE (Mean Reversion Check)
+            z_score = MathEngine.calculate_z_score(df['close'])
+            
+            if allowed_direction == 'LONG':
+                # Don't buy if price is > 2.5 Sigma (Overbought)
+                if z_score > 2.5:
+                    math_score -= 25 
+                    reasons.append(f"Z-Score {z_score:.2f} (Overbought)")
+                elif z_score < -1.0:
+                    math_score += 10 # Buying Dip
+                    reasons.append(f"Z-Score {z_score:.2f} (Dip)")
+            elif allowed_direction == 'SHORT':
+                if z_score < -2.5:
+                    math_score -= 25 
+                    reasons.append(f"Z-Score {z_score:.2f} (Oversold)")
+                elif z_score > 1.0:
+                    math_score += 10 
+                    reasons.append(f"Z-Score {z_score:.2f} (Rip)")
+                    
+            # B. REGRESSION SLOPE
+            reg = MathEngine.calculate_linear_regression(df['close'])
+            slope = reg['slope']
+            if allowed_direction == 'LONG' and slope > 0:
+                math_score += 10
+                if reg['r_squared'] > 0.7: math_score += 5
+                reasons.append(f"Reg Slope +{slope:.4f}")
+            elif allowed_direction == 'SHORT' and slope < 0:
+                math_score += 10
+                if reg['r_squared'] > 0.7: math_score += 5
+                reasons.append(f"Reg Slope {slope:.4f}")
+                
+            # C. HURST (Trend Quality)
+            hurst = MathEngine.calculate_hurst(df['close'])
+            if hurst > 0.55:
+                math_score += 10
+                reasons.append(f"Hurst {hurst:.2f}")
+            elif hurst < 0.45:
+                math_score -= 10
+                reasons.append(f"Choppy (H={hurst:.2f})")
+                
+            # D. ORDER FLOW (Volume Delta)
+            vol_delta = df['volume_delta'].iloc[-2] # Closed candle
+            if allowed_direction == 'LONG':
+                if vol_delta > 0:
+                     math_score += 10 # Buying Pressure Confirmed
+                     reasons.append("Delta+")
+                else:
+                     math_score -= 10 # Divergence (Price Up, Net Sell)
+                     reasons.append("Delta- (Div)")
+            elif allowed_direction == 'SHORT':
+                 if vol_delta < 0:
+                     math_score += 10 # Selling Pressure Confirmed
+                     reasons.append("Delta-")
+                 else:
+                     math_score -= 10 # Divergence
+                     reasons.append("Delta+ (Div)")
+
+            # Apply Math Score
+            signal['score'] += math_score
+            if math_score != 0:
+                signal['reason'].append(f"Math: {math_score:+d} ({', '.join(reasons)})")
 
         return signal if signal['score'] > 0 else None
 
@@ -350,7 +459,10 @@ class PatternDetector:
         TP = Recent Swing High (Long) / Low (Short)
         """
         # We need to import config here to avoid circular imports if config imports patterns
-        from config import config
+        try:
+            from config import config
+        except ImportError:
+            from trend_following_bot.config import config
         
         if len(df) < config.LOOKBACK_WINDOW_TP:
             return None, None

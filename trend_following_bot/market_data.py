@@ -15,7 +15,10 @@ import numpy as np
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from config import config
+try:
+    from config import config
+except ImportError:
+    from trend_following_bot.config import config
 
 logger = logging.getLogger("MarketData")
 
@@ -230,8 +233,11 @@ class MarketData:
                         'taker_buy_base', 'taker_buy_quote', 'ignore'
                     ])
                     # Numeric conversion is heavy, good to do in thread
-                    numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+                    numeric_cols = ['open', 'high', 'low', 'close', 'volume', 'taker_buy_base']
                     df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric)
+                    
+                    # Rename for clarity
+                    df['taker_buy_vol'] = df['taker_buy_base']
                     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                     return df
             except Exception as e:
@@ -241,6 +247,23 @@ class MarketData:
             return pd.DataFrame()
 
         return await loop.run_in_executor(None, _fetch_and_parse)
+
+    async def get_btc_trend(self):
+        """
+        THE KING'S GUARD: Fetch BTC 1H Trend for Correlation Check.
+        Returns: % Change in last hour.
+        """
+        try:
+             df = await self.get_klines("BTCUSDT", interval="1h", limit=2)
+             if df.empty: return 0.0
+             
+             close = df['close'].iloc[-1]
+             open_p = df['open'].iloc[-1]
+             
+             change_pct = (close - open_p) / open_p
+             return change_pct
+        except:
+             return 0.0
 
     async def get_current_price(self, symbol):
         """Get latest price"""
@@ -258,6 +281,56 @@ class MarketData:
         # But for real-time decision, 'openInterest' endpoint is better but limited.
         # Let's use openInterestHist to see the TREND of OI.
         url = f"{self.base_url}/fapi/v1/openInterestHist"
+        
+    async def get_market_breadth(self, limit=50):
+        """
+        THE WATCHTOWER: Analyze Market Breadth (Bull/Bear Ratio).
+        Fetches Top 'limit' coins and checks 1H Trend (Price > EMA20).
+        Returns: { 'bullish_pct': float, 'sentiment': str, 'btc_trend': str }
+        """
+        try:
+             # 1. Get Top Symbols
+             symbols = await self.get_top_symbols(limit=limit)
+             if not symbols: return {'bullish_pct': 50.0, 'sentiment': 'NEUTRAL', 'btc_trend': 'NEUTRAL'}
+             
+             # 2. Fetch 1H Data in Parallel
+             # We need just enough candles for EMA20 (e.g. 30)
+             tasks = [self.get_klines(sym, '1h', limit=30) for sym in symbols]
+             results = await asyncio.gather(*tasks)
+             
+             bull_count = 0
+             total_valid = 0
+             
+             for df in results:
+                 if df.empty or len(df) < 20: continue
+                 
+                 # Calc EMA 20
+                 close = df['close']
+                 ema_20 = close.ewm(span=20, adjust=False).mean().iloc[-1]
+                 current = close.iloc[-1]
+                 
+                 if current > ema_20:
+                     bull_count += 1
+                 total_valid += 1
+                 
+             if total_valid == 0: return {'bullish_pct': 50.0, 'sentiment': 'NEUTRAL'}
+             
+             bullish_pct = (bull_count / total_valid) * 100
+             
+             sentiment = 'NEUTRAL'
+             if bullish_pct > 60: sentiment = 'BULLISH'
+             if bullish_pct > 80: sentiment = 'EUPHORIC'
+             if bullish_pct < 40: sentiment = 'BEARISH'
+             if bullish_pct < 20: sentiment = 'PANIC'
+             
+             return {
+                 'bullish_pct': bullish_pct,
+                 'sentiment': sentiment,
+                 'total': total_valid
+             }
+        except Exception as e:
+             logger.error(f"Breadth check failed: {e}")
+             return {'bullish_pct': 50.0, 'sentiment': 'NEUTRAL'}
         params = {'symbol': symbol, 'period': period, 'limit': 30}
         
         loop = asyncio.get_running_loop()
