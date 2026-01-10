@@ -7,7 +7,10 @@ import numpy as np
 try:
     from .math_engine import MathEngine # Statistical Core
 except ImportError:
-    from trend_following_bot.math_engine import MathEngine
+    try:
+        from trend_following_bot.math_engine import MathEngine
+    except ImportError:
+        from math_engine import MathEngine
 
 class SentimentAnalyzer:
     """
@@ -271,7 +274,10 @@ class PatternDetector:
         try:
             from config import config # Late import to avoid circular dependency
         except ImportError:
-            from trend_following_bot.config import config
+            try:
+                from trend_following_bot.config import config
+            except ImportError:
+                from config import config
         
         # 3. BREAKOUT DETECTION (15m) matching Macro Trend
         # Calculate Volume Velocity (Speculative Bulla)
@@ -462,7 +468,10 @@ class PatternDetector:
         try:
             from config import config
         except ImportError:
-            from trend_following_bot.config import config
+            try:
+                from trend_following_bot.config import config
+            except ImportError:
+                from config import config
         
         if len(df) < config.LOOKBACK_WINDOW_TP:
             return None, None
