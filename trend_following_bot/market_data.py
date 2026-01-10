@@ -375,7 +375,7 @@ class MarketData:
         return await loop.run_in_executor(None, _fetch)
 
     # --- CRASH DETECTION LOGIC MOVED TO SENTIMENT ANALYZER (Keep simple here) ---
-    async def get_btc_trend(self):
+    async def get_btc_trend_status(self):
         """
         Check BTCUSDT Trend (Legacy + Sentiment Wrapper needed in Main).
         Returns: 'BULLISH', 'BEARISH', 'CRASH', or 'NEUTRAL'
