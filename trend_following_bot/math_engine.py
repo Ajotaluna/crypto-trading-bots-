@@ -90,8 +90,14 @@ class MathEngine:
             lags = range(2, max_lag)
             tau = [np.sqrt(np.std(np.subtract(series[lag:], series[:-lag]))) for lag in lags]
             
+            # Filter out zero variance (logs fail on 0)
+            valid = [(l, t) for l, t in zip(lags, tau) if t > 0]
+            if len(valid) < 3: return 0.5
+            
+            lags_v, tau_v = zip(*valid)
+            
             # Use polyfit to estimate Hurst
-            poly = np.polyfit(np.log(lags), np.log(tau), 1)
+            poly = np.polyfit(np.log(lags_v), np.log(tau_v), 1)
             return poly[0] * 2.0
         except:
             return 0.5
