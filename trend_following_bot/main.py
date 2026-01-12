@@ -49,6 +49,7 @@ class TrendBot:
         
     async def start(self):
         await self.market.initialize_balance()
+        await self.market.sync_positions() # Recover Phantom Positions
         self.start_balance = self.market.balance
         
         mode = "TEST (DRY RUN)" if self.market.is_dry_run else "PRODUCTION (REAL MONEY)"

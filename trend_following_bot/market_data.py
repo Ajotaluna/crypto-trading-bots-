@@ -131,6 +131,41 @@ class MarketData:
                 return None
         return None
 
+    async def sync_positions(self):
+        """Sync Open Positions from Exchange (Startup Recovery)"""
+        if self.is_dry_run: return
+        
+        try:
+            positions = await self._signed_request('GET', '/fapi/v2/positionRisk')
+            if not positions: return
+            
+            count = 0
+            for p in positions:
+                amt = float(p['positionAmt'])
+                if amt == 0: continue
+                
+                symbol = p['symbol']
+                side = 'LONG' if amt > 0 else 'SHORT'
+                entry_price = float(p['entryPrice'])
+                
+                # RECOVERED POSITION
+                self.positions[symbol] = {
+                    'symbol': symbol,
+                    'side': side,
+                    'amount': abs(amt),
+                    'entry_price': entry_price,
+                    'entry_time': datetime.now(), # Estimate
+                    'sl': 0.0, # Unknown external SL
+                    'tp': 0.0,
+                    'recovered': True
+                }
+                count += 1
+            
+            if count > 0:
+                logger.info(f"🔄 SYNC: Recovered {count} open positions from Exchange.")
+        except Exception as e:
+            logger.error(f"Sync Failed: {e}")
+
     async def initialize_balance(self):
         """Get initial balance"""
         if self.is_dry_run:
