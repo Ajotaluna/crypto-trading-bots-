@@ -455,8 +455,22 @@ class MarketData:
 
     # --- Execution Methods ---
     
+    async def cancel_open_orders(self, symbol):
+        """Cancel ALL open orders for a symbol"""
+        if self.is_dry_run: return
+
+        try:
+            # DELETE /fapi/v1/allOpenOrders
+            await self._signed_request('DELETE', '/fapi/v1/allOpenOrders', {'symbol': symbol})
+            logger.info(f"🧹 Cleared Open Orders for {symbol}")
+        except Exception as e:
+            logger.warning(f"Failed to clear orders for {symbol}: {e}")
+
     async def open_position(self, symbol, side, amount_usdt, sl_price, tp_price):
         """Open position (Mock or Real)"""
+        # 0. Safety First: Clear checks
+        await self.cancel_open_orders(symbol)
+
         price = await self.get_current_price(symbol)
         if price == 0: return None
         
@@ -662,6 +676,8 @@ class MarketData:
                 else:
                     logger.info(f"[REAL] CLOSE {symbol} | {reason}")
                     del self.positions[symbol]
+                    # CLEANUP: Cancel any lingering SL/TP
+                    await self.cancel_open_orders(symbol)
                 
                 return order # SUCCESS
             else:
