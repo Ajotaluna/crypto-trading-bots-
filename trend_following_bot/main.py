@@ -36,7 +36,8 @@ class TrendBot:
         self.running = True
         self.start_balance = 0.0
         self.watchlist = {} # Symbol -> Score
-        self.pending_entries = {} # {symbol: {signal, time, trigger_price}}
+        self.pending_entries = {}
+        self.trap_blacklist = {} # {symbol: expiry_time} # {symbol: {signal, time, trigger_price}}
         
         # SCOREBOARD (Persistent Stats)
         self.tracker = WinRateTracker()
@@ -383,6 +384,14 @@ class TrendBot:
 
     async def add_to_pending(self, symbol, signal, df):
         """Queue trade for Smart Entry (Confirmation)"""
+        # 0. Check Trap Blacklist
+        if symbol in self.trap_blacklist:
+            if datetime.now() < self.trap_blacklist[symbol]:
+                # logger.info(f"🚫 Ignoring {symbol} (Trap Blacklist Active)")
+                return
+            else:
+                del self.trap_blacklist[symbol] # Expired
+
         if symbol in self.market.positions or symbol in self.pending_entries: return
         
         last_candle = df.iloc[-1]
@@ -450,7 +459,8 @@ class TrendBot:
                                 
                         if breakout_confirmed:
                             if is_trap:
-                                logger.warning(f"⚠️ TRAP DETECTED {symbol}: Breakout but RSI Extended ({current_rsi:.1f}). Aborting.")
+                                logger.warning(f"⚠️ TRAP DETECTED {symbol}: Breakout but RSI Extended ({current_rsi:.1f}). Blacklisting for 60m.")
+                                self.trap_blacklist[symbol] = datetime.now() + timedelta(minutes=60)
                                 del self.pending_entries[symbol]
                                 continue
                                 
@@ -551,18 +561,19 @@ class TrendBot:
             
             # 1. HEARTBEAT MONITOR (LIFECYCLE TRACKER)
             # Log the vital signs of the trade constantly
-            if self.market.is_dry_run:
-                # Calculate Distances
-                dist_tp_pct = abs(pos['tp'] - current_price) / current_price * 100
-                dist_sl_pct = abs(current_price - pos['sl']) / current_price * 100
+            # ENABLED FOR ALL MODES (User Request)
+            
+            # Calculate Distances
+            dist_tp_pct = abs(pos['tp'] - current_price) / current_price * 100
+            dist_sl_pct = abs(current_price - pos['sl']) / current_price * 100
+            
+            # Calculate Current PnL
+            if pos['side'] == 'LONG':
+                curr_pnl_pct = (current_price - pos['entry_price']) / pos['entry_price'] * 100
+            else:
+                curr_pnl_pct = (pos['entry_price'] - current_price) / pos['entry_price'] * 100
                 
-                # Calculate Current PnL
-                if pos['side'] == 'LONG':
-                    curr_pnl_pct = (current_price - pos['entry_price']) / pos['entry_price'] * 100
-                else:
-                    curr_pnl_pct = (pos['entry_price'] - current_price) / pos['entry_price'] * 100
-                    
-                logger.info(f"💓 [TRACKER] {symbol}: Price {current_price:.5f} | ROI {curr_pnl_pct:+.2f}% | To TP: {dist_tp_pct:.2f}% | To SL: {dist_sl_pct:.2f}%")
+            logger.info(f"💓 [TRACKER] {symbol}: Price {current_price:.5f} | ROI {curr_pnl_pct:+.2f}% | To TP: {dist_tp_pct:.2f}% | To SL: {dist_sl_pct:.2f}%")
             
             # 1. Check Hard SL/TP (Instant)
             # Calculate PnL (ROI)
