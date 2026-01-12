@@ -281,7 +281,18 @@ class MarketData:
         # But for real-time decision, 'openInterest' endpoint is better but limited.
         # Let's use openInterestHist to see the TREND of OI.
         url = f"{self.base_url}/fapi/v1/openInterestHist"
+        params = {'symbol': symbol, 'period': period, 'limit': 30}
         
+        loop = asyncio.get_running_loop()
+        def _fetch():
+            try:
+                r = self.session.get(url, params=params, timeout=10)
+                if r.status_code == 200: return r.json()
+            except: pass
+            return []
+            
+        data = await loop.run_in_executor(None, _fetch)
+        return data
     async def get_market_breadth(self, limit=50):
         """
         THE WATCHTOWER: Analyze Market Breadth (Bull/Bear Ratio).
@@ -331,18 +342,6 @@ class MarketData:
         except Exception as e:
              logger.error(f"Breadth check failed: {e}")
              return {'bullish_pct': 50.0, 'sentiment': 'NEUTRAL'}
-        params = {'symbol': symbol, 'period': period, 'limit': 30}
-        
-        loop = asyncio.get_running_loop()
-        def _fetch():
-            try:
-                r = self.session.get(url, params=params, timeout=10)
-                if r.status_code == 200: return r.json()
-            except: pass
-            return []
-            
-        data = await loop.run_in_executor(None, _fetch)
-        return data
 
     async def get_top_long_short_ratio(self, symbol, period='1h'):
         """Get Top Traders Long/Short Ratio (Accounts)"""

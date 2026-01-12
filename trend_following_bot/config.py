@@ -75,7 +75,6 @@ class Config:
     # System
     TIMEFRAME = '15m'                # Analysis timeframe
     CHECK_INTERVAL = 60              # Slow scan interval
-    CHECK_INTERVAL = 60              # Slow scan interval
     MONITOR_INTERVAL = 300           # Reporting interval (5 mins)
     SAFETY_CHECK_INTERVAL = 5        # Safety check interval (5 sec)
     WATCHLIST_SCORE_THRESHOLD = 50.0 # Score to add to watchlist
