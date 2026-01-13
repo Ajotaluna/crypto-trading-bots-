@@ -594,37 +594,10 @@ class TrendBot:
                         pnl_usdt = roi * pos['amount'] * config.LEVERAGE
                         self.tracker.record_trade(pnl_usdt, symbol)
                     else:
-                        # 3-STAGE SAFETY PROTOCOL (ZOMBIE TRADE PREVENTION)
-                        pos['fails'] = pos.get('fails', 0) + 1
-                        fails = pos['fails']
-                        
-                        if fails <= 2:
-                            # STAGE 1: RECOVERY WAIT (Attempts 1-2)
-                            logger.error(f"⚠️ [STAGE 1] CLOSE FAILED for {symbol} (Attempt {fails}). Waiting for recovery...")
-                            # Doing nothing allows price to recover in next loop
-                        
-                        elif fails == 3:
-                            # STAGE 2: EMERGENCY DRAIN (Attempt 3)
-                            logger.error(f"� [STAGE 2] EMERGENCY DRAIN for {symbol}: Reducing Position Size...")
-                            try:
-                                # Try closing 90% of position (Drain)
-                                drain_qty = pos['amount'] * 0.9
-                                await self.market.close_position(symbol, "EMERGENCY DRAIN", params={'qty': drain_qty})
-                            except: pass
-
-                        elif fails > 5:
-                            # STAGE 3: HARD STOP DEPLOYMENT (Attempt 6+)
-                            logger.warning(f"🛡️ [STAGE 3] HARDENING {symbol}: Deploying REAL STOP_MARKET Order...")
-                            try:
-                                await self.market._signed_request('POST', '/fapi/v1/order', {
-                                    'symbol': symbol,
-                                    'side': 'SELL',
-                                    'type': 'STOP_MARKET',
-                                    'stopPrice': f"{current_price}", # Trigger NOW
-                                    'closePosition': 'true'
-                                })
-                            except Exception as e:
-                                logger.error(f"Stage 3 Failed: {e}")
+                        # SURVIVAL MODE (Simple)
+                        # API Failed to close. We do NOT record loss. We wait for next loop.
+                        # If price recovers > SL, we survive.
+                        logger.error(f"❌ CLOSE FAILED for {symbol}. Keeping position open for potential recovery.")
                     
                     continue
                 if current_price >= pos['tp']:
@@ -646,35 +619,8 @@ class TrendBot:
                         pnl_usdt = roi * pos['amount'] * config.LEVERAGE
                         self.tracker.record_trade(pnl_usdt, symbol)
                     else:
-                        # 3-STAGE SAFETY PROTOCOL (ZOMBIE TRADE PREVENTION)
-                        pos['fails'] = pos.get('fails', 0) + 1
-                        fails = pos['fails']
-                        
-                        if fails <= 2:
-                            # STAGE 1: RECOVERY WAIT
-                            logger.error(f"⚠️ [STAGE 1] CLOSE FAILED for {symbol} (Attempt {fails}). Waiting for recovery...")
-                        
-                        elif fails == 3:
-                            # STAGE 2: EMERGENCY DRAIN (Attempt 3)
-                            logger.error(f"🚨 [STAGE 2] EMERGENCY DRAIN for {symbol}: Reducing Position Size...")
-                            try:
-                                drain_qty = pos['amount'] * 0.9
-                                await self.market.close_position(symbol, "EMERGENCY DRAIN", params={'qty': drain_qty})
-                            except: pass
-
-                        elif fails > 5:
-                            # STAGE 3: HARD STOP DEPLOYMENT (Attempt 6+)
-                            logger.warning(f"🛡️ [STAGE 3] HARDENING {symbol}: Deploying REAL STOP_MARKET Order...")
-                            try:
-                                await self.market._signed_request('POST', '/fapi/v1/order', {
-                                    'symbol': symbol,
-                                    'side': 'BUY', # BUY TO COVER
-                                    'type': 'STOP_MARKET',
-                                    'stopPrice': f"{current_price}",
-                                    'closePosition': 'true'
-                                })
-                            except Exception as e:
-                                logger.error(f"Stage 3 Failed: {e}")
+                        # SURVIVAL MODE (Simple)
+                        logger.error(f"❌ CLOSE FAILED for {symbol}. Keeping position open for potential recovery.")
                         
                     continue
                 if current_price <= pos['tp']:
