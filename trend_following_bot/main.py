@@ -583,14 +583,49 @@ class TrendBot:
                 pnl_pct = (current_price - pos['entry_price']) / pos['entry_price']
                 if current_price <= pos['sl']:
                     logger.warning(f"🛑 STOP LOSS HIT: {symbol} at {current_price}")
-                    self.blacklist.record_loss(symbol) # Report Loss
                     
-                    # SCOREBOARD UPDATE
-                    roi = (current_price - pos['entry_price']) / pos['entry_price']
-                    pnl_usdt = roi * pos['amount'] * config.LEVERAGE
-                    self.tracker.record_trade(pnl_usdt, symbol)
+                    # 1. ATTEMPT CLOSE FIRST
+                    result = await self.market.close_position(symbol, "STOP LOSS")
                     
-                    await self.market.close_position(symbol, "STOP LOSS")
+                    if result:
+                        # SUCCESS: Record Loss & Stats
+                        self.blacklist.record_loss(symbol) 
+                        roi = (current_price - pos['entry_price']) / pos['entry_price']
+                        pnl_usdt = roi * pos['amount'] * config.LEVERAGE
+                        self.tracker.record_trade(pnl_usdt, symbol)
+                    else:
+                        # 3-STAGE SAFETY PROTOCOL (ZOMBIE TRADE PREVENTION)
+                        pos['fails'] = pos.get('fails', 0) + 1
+                        fails = pos['fails']
+                        
+                        if fails <= 2:
+                            # STAGE 1: RECOVERY WAIT (Attempts 1-2)
+                            logger.error(f"⚠️ [STAGE 1] CLOSE FAILED for {symbol} (Attempt {fails}). Waiting for recovery...")
+                            # Doing nothing allows price to recover in next loop
+                        
+                        elif fails == 3:
+                            # STAGE 2: EMERGENCY DRAIN (Attempt 3)
+                            logger.error(f"� [STAGE 2] EMERGENCY DRAIN for {symbol}: Reducing Position Size...")
+                            try:
+                                # Try closing 90% of position (Drain)
+                                drain_qty = pos['amount'] * 0.9
+                                await self.market.close_position(symbol, "EMERGENCY DRAIN", params={'qty': drain_qty})
+                            except: pass
+
+                        elif fails > 5:
+                            # STAGE 3: HARD STOP DEPLOYMENT (Attempt 6+)
+                            logger.warning(f"🛡️ [STAGE 3] HARDENING {symbol}: Deploying REAL STOP_MARKET Order...")
+                            try:
+                                await self.market._signed_request('POST', '/fapi/v1/order', {
+                                    'symbol': symbol,
+                                    'side': 'SELL',
+                                    'type': 'STOP_MARKET',
+                                    'stopPrice': f"{current_price}", # Trigger NOW
+                                    'closePosition': 'true'
+                                })
+                            except Exception as e:
+                                logger.error(f"Stage 3 Failed: {e}")
+                    
                     continue
                 if current_price >= pos['tp']:
                     await self.market.close_position(symbol, "TAKE PROFIT")
@@ -599,8 +634,48 @@ class TrendBot:
                 pnl_pct = (pos['entry_price'] - current_price) / pos['entry_price']
                 if current_price >= pos['sl']:
                     logger.warning(f"🛑 STOP LOSS HIT: {symbol} at {current_price}")
-                    self.blacklist.record_loss(symbol) # Report Loss
-                    await self.market.close_position(symbol, "STOP LOSS")
+                    
+                    # 1. ATTEMPT CLOSE FIRST
+                    result = await self.market.close_position(symbol, "STOP LOSS")
+                    
+                    if result:
+                        # SUCCESS
+                        self.blacklist.record_loss(symbol)
+                        # SHORT ROI = (Entry - Exit) / Entry
+                        roi = (pos['entry_price'] - current_price) / pos['entry_price']
+                        pnl_usdt = roi * pos['amount'] * config.LEVERAGE
+                        self.tracker.record_trade(pnl_usdt, symbol)
+                    else:
+                        # 3-STAGE SAFETY PROTOCOL (ZOMBIE TRADE PREVENTION)
+                        pos['fails'] = pos.get('fails', 0) + 1
+                        fails = pos['fails']
+                        
+                        if fails <= 2:
+                            # STAGE 1: RECOVERY WAIT
+                            logger.error(f"⚠️ [STAGE 1] CLOSE FAILED for {symbol} (Attempt {fails}). Waiting for recovery...")
+                        
+                        elif fails == 3:
+                            # STAGE 2: EMERGENCY DRAIN (Attempt 3)
+                            logger.error(f"🚨 [STAGE 2] EMERGENCY DRAIN for {symbol}: Reducing Position Size...")
+                            try:
+                                drain_qty = pos['amount'] * 0.9
+                                await self.market.close_position(symbol, "EMERGENCY DRAIN", params={'qty': drain_qty})
+                            except: pass
+
+                        elif fails > 5:
+                            # STAGE 3: HARD STOP DEPLOYMENT (Attempt 6+)
+                            logger.warning(f"🛡️ [STAGE 3] HARDENING {symbol}: Deploying REAL STOP_MARKET Order...")
+                            try:
+                                await self.market._signed_request('POST', '/fapi/v1/order', {
+                                    'symbol': symbol,
+                                    'side': 'BUY', # BUY TO COVER
+                                    'type': 'STOP_MARKET',
+                                    'stopPrice': f"{current_price}",
+                                    'closePosition': 'true'
+                                })
+                            except Exception as e:
+                                logger.error(f"Stage 3 Failed: {e}")
+                        
                     continue
                 if current_price <= pos['tp']:
                     # SCOREBOARD UPDATE
