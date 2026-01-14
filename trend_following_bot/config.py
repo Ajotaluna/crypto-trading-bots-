@@ -57,7 +57,7 @@ class Config:
     
     MAX_OPEN_POSITIONS = 10          # Restore missing config
     CAPITAL_PER_TRADE_PCT = 0.0      # DEPRECATED in favor of Risk Sizing
-    LEVERAGE = 10                    # 10x
+    LEVERAGE = 5                     # 5x
     
     # Dynamic TP/SL Lookback
     LOOKBACK_WINDOW_SL = 20          # Recent Low/High for Stop Loss
