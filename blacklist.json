@@ -1,22 +1,4 @@
 {
-    "blacklist": {
-        "BTCUSDT": {
-            "banned_until": 1768416724.0325093,
-            "reason": "5 Consecutive Losses"
-        },
-        "ETHUSDT": {
-            "banned_until": 1768416788.9803262,
-            "reason": "5 Consecutive Losses"
-        }
-    },
-    "loss_tracker": {
-        "BTCUSDT": {
-            "losses": 230,
-            "last_loss": 1768402324.0315077
-        },
-        "ETHUSDT": {
-            "losses": 240,
-            "last_loss": 1768402388.979327
-        }
-    }
+    "blacklist": {},
+    "loss_tracker": {}
 }
