@@ -72,17 +72,28 @@ class MarketData:
                         # Save stepSize (Qty) and tickSize (Price) for each symbol
                         q_step = 1.0
                         p_tick = 0.01
+                        min_qty = 0.001
+                        min_notional = 5.0 # Default safe value
+                        
                         for f in s['filters']:
                             if f['filterType'] == 'LOT_SIZE':
                                 q_step = float(f['stepSize'])
+                                min_qty = float(f['minQty'])
                             elif f['filterType'] == 'PRICE_FILTER':
                                 p_tick = float(f['tickSize'])
+                            elif f['filterType'] == 'MIN_NOTIONAL':
+                                min_notional = float(f.get('notional', 5.0))
                         
-                        self.exchange_info_cache[s['symbol']] = {'q': q_step, 'p': p_tick}
+                        self.exchange_info_cache[s['symbol']] = {
+                            'q': q_step, 
+                            'p': p_tick, 
+                            'min_q': min_qty, 
+                            'min_n': min_notional
+                        }
             except Exception as e:
                 logger.error(f"Failed to fetch Exchange Info: {e}")
         
-        return self.exchange_info_cache.get(symbol, {'q': 1.0, 'p': 0.01})
+        return self.exchange_info_cache.get(symbol, {'q': 1.0, 'p': 0.01, 'min_q': 0.001, 'min_n': 5.0})
 
     def _round_step_size(self, quantity, step_size):
         """Round quantity to nearest stepSize"""
@@ -98,6 +109,8 @@ class MarketData:
 
     async def _signed_request(self, method, endpoint, params=None):
         """Execute signed request for production (Non-Blocking)"""
+        # ... (implementation kept same via diff) ...
+        # TRUNCATED FOR BREVITY IN PROMPT, WILL USE FULL CONTENT
         if params is None: params = {}
         params['timestamp'] = int(time.time() * 1000)
         params['signature'] = self._get_signature(params)
@@ -130,6 +143,41 @@ class MarketData:
             except Exception:
                 return None
         return None
+
+    def _validate_order_compliance(self, symbol, qty, price, info):
+        """
+        THE GATEKEEPER: Strict Order Validation (Local Pre-Flight Check).
+        Returns: (is_valid, corrected_qty, reason)
+        """
+        min_qty = info.get('min_q', 0.001)
+        min_notional = info.get('min_n', 5.0)
+        step_size = info.get('q', 1.0)
+        
+        # 1. Check Min Quantity
+        if qty < min_qty:
+            return False, 0.0, f"Qty {qty} < MinQty {min_qty}"
+
+        # 2. Check Min Notional (Value)
+        notional_value = qty * price
+        
+        # Safety Buffer: Add 1% to Min Notional to avoid edge-case rejections
+        safe_min_notional = min_notional * 1.01 
+        
+        if notional_value < safe_min_notional:
+            # AUTO-CORRECT: Upgrade Quantity to meet Min Notional
+            # Target: safe_min_notional
+            # New Qty = Target / Price
+            required_qty = safe_min_notional / price
+            corrected_qty = self._round_step_size(required_qty, step_size)
+            
+            # Double Check (Rounding might lower it slightly)
+            if (corrected_qty * price) < min_notional:
+                 corrected_qty += step_size # Bump up one step
+                 corrected_qty = self._round_step_size(corrected_qty, step_size)
+            
+            return False, corrected_qty, f"Notional ${notional_value:.2f} < Min ${min_notional}. Upgrading."
+
+        return True, qty, "OK"
 
     async def sync_positions(self):
         """Sync Open Positions from Exchange (Startup Recovery)"""
@@ -551,6 +599,13 @@ class MarketData:
             tick_size = info['p']
             
             qty_val = self._round_step_size(amount, step_size)
+            
+            # VALIDATION GUARD (The Gatekeeper) for Entry
+            is_valid, corrected_qty, reason = self._validate_order_compliance(symbol, qty_val, price, info)
+            if not is_valid:
+                logger.warning(f"👮 GATEKEEPER (ENTRY {symbol}): {reason} -> Auto-Correcting to {corrected_qty}")
+                qty_val = corrected_qty
+            
             qty = f"{qty_val}" # Auto format
             
             # Round SL/TP Prices (Pre-calc for Atomic Order)
@@ -683,22 +738,35 @@ class MarketData:
             # REAL CLOSE
             side_param = 'SELL' if pos['side'] == 'LONG' else 'BUY'
             
-            # --- FIX: ROUND QUANTITY TO STEP SIZE ---
-            # --- FIX: ROUND QUANTITY TO STEP SIZE ---
-            # 1. Get Precision Rules (Using Helper)
+            # --- FIX: ROUND QUANTITY AND VALIDATE AGAINST FILTERS ---
+            # 1. Get Precision Rules
             prec = await self._get_symbol_precision(symbol)
             step_size = prec['q']
             
-            # 2. Round
+            # 2. Round Initial Qty
             qty_val = self._round_step_size(qty_to_close, step_size)
-            qty_str = f"{qty_val}" # Format as string
+            
+            # 3. VALIDATION GUARD (The Gatekeeper)
+            is_valid, corrected_qty, reason = self._validate_order_compliance(symbol, qty_val, price, prec)
+            
+            if not is_valid:
+                logger.warning(f"👮 GATEKEEPER ({symbol}): {reason} -> Auto-Correcting to {corrected_qty}...")
+                qty_val = corrected_qty
+                
+                # SPECIAL CASE: If correction exceeds remaining amount (polvo), CLOSE ALL.
+                if qty_val >= pos['amount'] * 0.99:
+                    logger.info(f"🧹 DUST CLEANUP: Upgrading to FULL CLOSE for {symbol}.")
+                    qty_val = pos['amount']
+                    is_partial = False # Force Full Close status
+            
+            qty_str = f"{qty_val}"
             
             # ReduceOnly order
             order = await self._signed_request('POST', '/fapi/v1/order', {
                 'symbol': symbol,
                 'side': side_param,
                 'type': 'MARKET',
-                'quantity': qty_str, # Use Rounded String
+                'quantity': qty_str, # Use Validated String
                 'reduceOnly': 'true'
             })
             
