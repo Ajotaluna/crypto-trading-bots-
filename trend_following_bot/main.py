@@ -55,7 +55,7 @@ class TrendBot:
         mode = "TEST (DRY RUN)" if self.market.is_dry_run else "PRODUCTION (REAL MONEY)"
         logger.info(f">>> TREND FOLLOWING BOT V2 (REAL-TIME) STARTED [{mode}] <<<")
         logger.info(f"Config: Score {config.MIN_SIGNAL_SCORE}+ | Hold {config.MIN_POSITION_TIME_SEC/3600}h-{config.MAX_POSITION_TIME_SEC/3600}h")
-        logger.info(f"Daily Target: {config.DAILY_PROFIT_TARGET_PCT}% (Stop at ${self.start_balance * (1 + config.DAILY_PROFIT_TARGET_PCT/100):.2f})")
+        logger.info(f"Daily Target: {config.DAILY_PROFIT_TARGET_PCT}% (Secure & Recalibrate at ${self.start_balance * (1 + config.DAILY_PROFIT_TARGET_PCT/100):.2f})")
         
         # Run loops concurrently
         await asyncio.gather(
