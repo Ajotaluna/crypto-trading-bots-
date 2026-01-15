@@ -234,30 +234,9 @@ class TrendBot:
             pass # PnL tracker might not be ready
 
         # ------------------------------------------------------------------
-        # BLACKOUT PROTOCOL: STOP EVERYTHING
-        # 1. During Tokyo Session (00:00 - 09:00 UTC)
-        # 2. If Daily Target is HIT (Wait until next day 09:00)
+        # BLACKOUTS REMOVED - 24/7 OPERATION
         # ------------------------------------------------------------------
-        # ------------------------------------------------------------------
-        # 1. TOKYO BLACKOUT (STRICT STOP)
-        # ------------------------------------------------------------------
-        if is_tokyo_blackout:
-             logger.info(f"⛔ BLACKOUT (TOKYO): Suspending Operations until 09:00 UTC.")
-             
-             # FORCE CLOSE ALL OPEN POSITIONS
-             if self.market.positions:
-                 logger.warning(f"⚠️ FORCE CLOSING {len(self.market.positions)} positions for Blackout...")
-                 for sym in list(self.market.positions.keys()):
-                     await self.market.close_position(sym, "BLACKOUT EXIT")
-             
-             return # STOP ENGINE
-
-        # ------------------------------------------------------------------
-        # 2. DAILY TARGET SOFT LANDING (INFINITY MODE)
-        # ------------------------------------------------------------------
-        if daily_target_hit:
-             logger.info(f"✅ DAILY TARGET HIT ({current_pnl_pct:.2f}%). Soft Landing: Pausing New Scans, Letting Runners Run.")
-             return # STOP SCANNING (But do NOT close existing positions)
+        pass
 
         # ------------------------------------------------------------------
         # ACTIVE TRADING MODE (09:00 - 23:59 UTC)
@@ -491,36 +470,28 @@ class TrendBot:
         # 1. GET PRICE
         price = df.iloc[-1]['close']
         
-        # 2. CALCULATE DYNAMIC SL/TP FIRST (Needed for Sizing)
-        sl, tp = self.detector.calculate_dynamic_levels(df, signal['direction'])
+        # 2. GET DYNAMIC SL/TP FROM SIGNAL (Titan V3)
+        # These were calculated by PatternDetector based on ATR/Volatility
+        sl = signal.get('sl_price', 0)
+        tp = signal.get('tp_price', 0)
+        risk_pct = signal.get('risk_pct', config.RISK_PER_TRADE_PCT)
         
-        # Fallback if dynamic calc fails
+        # Fallback (Safety)
         if not sl or not tp:
-            logger.warning(f"Dynamic TP/SL failed for {symbol}. Using fixed fallback.")
-            if signal['direction'] == 'LONG':
+             logger.warning(f"⚠️ Dynamic Levels missing for {symbol}. Falling back to config.")
+             if signal['direction'] == 'LONG':
                 sl = price * (1 - config.STOP_LOSS_PCT/100)
                 tp = price * (1 + config.TAKE_PROFIT_PCT/100)
-            else:
+             else:
                 sl = price * (1 + config.STOP_LOSS_PCT/100)
                 tp = price * (1 - config.TAKE_PROFIT_PCT/100)
 
         # 3. THE RISK VAULT: Calculate Position Size based on Risk
-        # We want to lose exactly RISK_PER_TRADE_PCT if SL is hit.
-        base_amount = self.market.calculate_position_size(symbol, price, sl)
+        # TITAN V3: Use the Dynamic 'risk_pct' from the signal (0.5% - 2.0%)
+        # Note: We do not apply the "Casino Manager" scaler anymore because 
+        # Risk Factor is already built into risk_pct.
         
-        # 4. CASINO MANAGER (Kelly Lite Sizing)
-        # Scale the size based on Score Confidence
-        scaler = 1.0
-        score = signal.get('score', 0)
-        
-        if score >= 90:
-             scaler = 1.66 # Boost Risk to ~2.5% (assuming base is 1.5%)
-        elif score >= 80:
-             scaler = 1.33 # Boost Risk to ~2.0%
-        elif score < 75:
-             scaler = 0.66 # Reduce Risk to ~1.0%
-             
-        amount = base_amount * scaler
+        amount = self.market.calculate_position_size(symbol, price, sl, override_risk_pct=risk_pct)
         
         # LOW CAPITAL OVERRIDE: Force Minimum Size $12
         # User Strategy: Ensure size is enough for 50% Partial Close ($6) > Min Notional ($5)
@@ -545,9 +516,17 @@ class TrendBot:
         result = await self.market.open_position(symbol, signal['direction'], amount, sl, tp)
         
         if result:
+            # INJECT STRATEGY MODE & DYNAMIC SCALP TARGET
+            mode = signal.get('strategy_mode', 'TREND')
+            partial_tp = signal.get('partial_tp_price', 0.0)
+            
+            if symbol in self.market.positions:
+                 self.market.positions[symbol]['strategy_mode'] = mode
+                 self.market.positions[symbol]['partial_tp'] = partial_tp
+            
             # LOG THE REAL EXECUTION PRICE (Honesty Fix)
             real_entry = result['entry_price']
-            logger.info(f"🔫 OPEN SUCCESS {symbol} {signal['direction']} | Size: ${amount:.2f} | Entry: {real_entry:.4f} | SL: {sl:.4f} | TP: {tp:.4f}")
+            logger.info(f"🔫 OPEN SUCCESS {symbol} ({mode} MODE) {signal['direction']} | Size: ${amount:.2f} | Entry: {real_entry:.4f} | SL: {sl:.4f} | TP: {tp:.4f}")
         else:
             logger.error(f"❌ EXECUTION FAILED for {symbol}. Check logs for details (Precision/Margin/API).")
 
@@ -647,41 +626,50 @@ class TrendBot:
             
             current_roi = pnl_pct
             
-            # A. MOVE TO BREAK EVEN at +1.0% Profit (Relaxed from 0.6% to let trades breathe)
-            if current_roi >= 0.010 and not has_moved_to_be:
-                # Move SL to Entry (Plus small buffer 0.1% for fees)
-                buffer = 0.001
-                new_sl = pos['entry_price'] * (1 + buffer if pos['side'] == 'LONG' else 1 - buffer)
-                
-                # Update SL
-                pos['sl'] = new_sl
-                pos['be_locked'] = True
-                
-                logger.info(f"🛡️ HARVESTER: Locked BREAK EVEN for {symbol} @ {new_sl:.4f} (ROI > 1.0%)")
+            # A. ADAPTIVE MANAGEMENT (Titan V4)
+            mode = pos.get('strategy_mode', 'TREND') # Legacy positions treated as TREND
+            
+            # --- SCALP MODE LOGIC ---
+            if mode == 'SCALP':
+                # 1. Quick Break Even
+                if current_roi >= 0.015 and not has_moved_to_be: # 1.5% Trigger
+                     # Move SL to Entry
+                     buffer = 0.001
+                     new_sl = pos['entry_price'] * (1 + buffer if pos['side'] == 'LONG' else 1 - buffer)
+                     pos['sl'] = new_sl
+                     pos['be_locked'] = True
+                     logger.info(f"🛡️ SCALP: Fast BE locked for {symbol} @ {new_sl:.4f}")
 
-            # B. PARTIAL PROFIT at +1.2% Profit (Bank 50%)
-            if current_roi >= 0.012 and not has_taken_partial:
-                # Calculate 50% Value
-                qty_to_close = pos['amount'] * 0.5
-                value_to_close = qty_to_close * current_price
+                # 2. Harvest (Partial Take Profit) - Dynamic ATR Target
+                partial_tp = pos.get('partial_tp', 0.0)
+                harvest_triggered = False
                 
-                # SMART CLOSE CHECK (Small Accounts Fix)
-                # If 50% is less than $7 (Risk of rejection), CLOSE EVERYTHING.
-                if value_to_close < 7.0:
-                     logger.info(f"🌾 SMART HARVESTER: Partial value (${value_to_close:.2f}) too small. Closing FULL position to secure profit.")
-                     await self.market.close_position(symbol, f"SMART TP (Full) (+{current_roi*100:.2f}%)")
-                     # Position is gone, break loop to avoid further checks
-                     continue
-                else:
-                    # Standard 50% Close
-                    result = await self.market.close_position(symbol, f"HARVESTER Partial TP (+{current_roi*100:.2f}%)", params={'qty': qty_to_close})
-                    
-                    if result:
-                        pos['amount'] -= qty_to_close # Update local tracking
-                        pos['partial_taken'] = True
-                        logger.info(f"🌾 HARVESTER: Banking 50% Profit on {symbol} @ {current_price:.5f} (+{current_roi*100:.2f}%)")
-                    else:
-                        logger.warning(f"⚠️ PARTIAL CLOSE FAILED for {symbol}. API rejected the order (Check logs for reason). Retrying next tick...")
+                if partial_tp > 0:
+                    if pos['side'] == 'LONG' and current_price >= partial_tp: harvest_triggered = True
+                    if pos['side'] == 'SHORT' and current_price <= partial_tp: harvest_triggered = True
+                
+                # Fallback to old 2.0% if missing (Legacy)
+                if partial_tp == 0 and current_roi >= 0.020: harvest_triggered = True
+                
+                if harvest_triggered and not pos.get('harvested', False):
+                     # Close 50%
+                     await self.market.close_position(symbol, "SCALP_HARVEST", params={'qty': pos['amount'] * 0.5})
+                     pos['harvested'] = True
+                     logger.info(f"💰 SCALP: Harvested 50% of {symbol} @ {current_price:.4f} (Dynamic Target Hit)")
+                     
+            # --- TREND MODE LOGIC ---
+            else: # TREND
+                # 1. Patient Break Even
+                if current_roi >= 0.030 and not has_moved_to_be: # 3.0% Trigger
+                     buffer = 0.001
+                     new_sl = pos['entry_price'] * (1 + buffer if pos['side'] == 'LONG' else 1 - buffer)
+                     pos['sl'] = new_sl
+                     pos['be_locked'] = True
+                     logger.info(f"🛡️ TREND: Break Even locked for {symbol} @ {new_sl:.4f} (ROI > 3%)")
+
+            # B. PARTIAL PROFIT - DISABLED FOR TITAN V3 (PURE TREND)
+            # Logic Removed. We hold for the big move.
+            pass
 
             # 1c. THE BLOODHOUND V3 (ATR Trailing Stop)
             # Only trail IF we have already locked Break Even (Don't choke early trade)

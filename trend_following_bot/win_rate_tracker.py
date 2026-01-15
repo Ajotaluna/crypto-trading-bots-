@@ -66,6 +66,6 @@ class WinRateTracker:
             rate = (self.stats['wins'] / self.stats['total_trades']) * 100
             
         logger.info(
-            f"📊 SCOREBOARD: WINS: {self.stats['wins']} | LOSSES: {self.stats['losses']} | "
+            f"SCOREBOARD: WINS: {self.stats['wins']} | LOSSES: {self.stats['losses']} | "
             f"RATE: {rate:.1f}% | TOTAL PNL: ${self.stats['total_pnl_usdt']:.2f}"
         )

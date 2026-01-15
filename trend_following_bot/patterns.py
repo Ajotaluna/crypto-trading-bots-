@@ -398,6 +398,79 @@ class PatternDetector:
             if math_score != 0:
                 signal['reason'].append(f"Math: {math_score:+d} ({', '.join(reasons)})")
 
+        if signal['score'] > 0:
+            # --- TITAN V3: SMART CONTEXT (Risk & Levels) ---
+            
+            # 1. Dynamic Risk Sizing (AGGRESSIVE MODE)
+            # Base Risk is 1.0 (Standard)
+            # A+ Setup (>90): Risk 3.0% (Increased from 2.0%)
+            # B Setup (80-89): Risk 2.0% (Increased from 1.0%)
+            # C Setup (70-79): Risk 1.0% (Increased from 0.5%)
+            
+            risk_pct = 1.0 # Default
+            if signal['score'] >= 90: risk_pct = 3.0
+            elif signal['score'] >= 80: risk_pct = 2.0
+            elif signal['score'] < 75: risk_pct = 1.0 # Even speculative calls get 1% now
+            
+            signal['risk_pct'] = risk_pct
+            signal['reason'].append(f"Smart Risk: {risk_pct}% (Score {signal['score']})")
+            
+            # 2. Dynamic SL/TP (ATR Based)
+            # We calculate this here so the Executor doesn't have to guess.
+            # Better: use proper ATR
+            df_atr = TechnicalAnalysis.calculate_indicators(df)
+            if 'tr' not in df_atr.columns: # Fallback
+                current_atr = df_atr.iloc[-1]['close'] * 0.01 
+            else:
+                # Rolling ATR
+                current_atr = df_atr['tr'].rolling(14).mean().iloc[-1]
+            
+            sl_price = 0.0
+            tp_price = 0.0
+            current_price = curr['close']
+            
+            # Volatility Factor: If ATR is HUGE (>2% of price), widen stops
+            vol_pct = current_atr / current_price
+            atr_mult_sl = 2.0 # Standard Wide Stop
+            if vol_pct > 0.02: atr_mult_sl = 3.0 # Volatile -> Wider
+            if vol_pct < 0.005: atr_mult_sl = 1.5 # Stable -> Tighter
+            
+            # 3. Strategy Mode (Titan V4 Adaptive)
+            # TREND: High Confidence (>85) AND Good Volatility -> Let it run
+            # SCALP: Standard Confidence (75-84) OR Low Volatility -> Hit & Run
+            
+            strategy_mode = 'SCALP' # Default safety
+            if signal['score'] >= 85 and vol_pct > 0.008: # >0.8% ATR is decent movement
+                 strategy_mode = 'TREND'
+            
+            # Special Case: Momentum Override is always TREND
+            if signal['score'] >= 90: strategy_mode = 'TREND'
+            
+            signal['strategy_mode'] = strategy_mode
+            signal['reason'].append(f"Mode: {strategy_mode}")
+
+            if allowed_direction == 'LONG':
+                sl_price = current_price - (current_atr * atr_mult_sl)
+                # TP Target: 
+                # If SCALP: Aim for 1.5R (Risk Unit) dynamic target
+                # If TREND: Infinity
+                tp_price = current_price + (current_atr * atr_mult_sl * 3)
+                
+                # Dynamic Partial TP (For Scalp Mode)
+                # target = Entry + (1.5 * ATR)
+                partial_tp_price = current_price + (current_atr * 1.5)
+                
+            elif allowed_direction == 'SHORT':
+                sl_price = current_price + (current_atr * atr_mult_sl)
+                tp_price = current_price - (current_atr * atr_mult_sl * 3)
+                
+                partial_tp_price = current_price - (current_atr * 1.5)
+                
+            signal['sl_price'] = sl_price
+            signal['tp_price'] = tp_price
+            signal['partial_tp_price'] = partial_tp_price
+            signal['reason'].append(f"Smart Levels (ATR {current_atr:.2f})")
+
         return signal if signal['score'] > 0 else None
 
     def find_major_levels(self, df, tolerance=0.01):

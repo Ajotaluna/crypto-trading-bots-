@@ -297,10 +297,12 @@ class MarketData:
         # Fallback (Safe Majors)
         return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT']
 
-    async def get_klines(self, symbol, interval='15m', limit=100):
+    async def get_klines(self, symbol, interval='15m', limit=100, start_time=None):
         """Fetch candlestick data (Non-Blocking)"""
         url = f"{self.base_url}/fapi/v1/klines"
         params = {'symbol': symbol, 'interval': interval, 'limit': limit}
+        if start_time:
+             params['startTime'] = start_time
         
         loop = asyncio.get_running_loop()
         
@@ -501,15 +503,20 @@ class MarketData:
                 
         return 'NEUTRAL'
 
-    def calculate_position_size(self, symbol, entry_price, sl_price):
+    def calculate_position_size(self, symbol, entry_price, sl_price, override_risk_pct=None):
         """
         THE RISK VAULT: Calculate Position Size based on Risk %.
         Formula: Size = (Balance * Risk%) / Distance%
         """
         if entry_price <= 0 or sl_price <= 0: return 0.0
         
-        # 1. Calculate Risk Amount (e.g. 1% of $1000 = $10)
-        risk_amount = self.balance * (config.RISK_PER_TRADE_PCT / 100)
+        # 1. Determine Risk Percentage (Dynamic vs Static)
+        risk_pct = config.RISK_PER_TRADE_PCT
+        if override_risk_pct is not None:
+             risk_pct = override_risk_pct
+        
+        # 2. Calculate Risk Amount (e.g. 1% of $1000 = $10)
+        risk_amount = self.balance * (risk_pct / 100)
         
         # 2. Calculate Stop Loss Distance %
         dist_pct = abs(entry_price - sl_price) / entry_price
