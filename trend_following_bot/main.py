@@ -95,9 +95,6 @@ class TrendBot:
                     if real_status:
                         total_equity = real_status['equity']
                         unrealized_pnl_usdt = real_status['unrealized_pnl']
-                        # Calculate Margin from Balance - Available (approx) or iterate positions if needed
-                        # Ideally get 'totalInitialMargin' from API if available, but for now we trust Equity.
-                        # We don't strictly need 'margin_used' for the trigger, just Equity.
                         
                         logger.debug(f"[REAL] API Status: Eq={total_equity}, PnL_Unr={unrealized_pnl_usdt}")
                     else:
@@ -121,15 +118,6 @@ class TrendBot:
                                     pnl_val = pos['amount'] * (pos['entry_price'] - curr_price)
                                 
                                 unrealized_pnl_usdt += pnl_val
-                    
-                    # Formula: Equity = Balance (Available) + Margin + Unrealized PnL
-                    # WAIT! In "Tracker Mode" (Dry Run), we typically DO NOT deduct margin from self.balance anymore.
-                    # So self.balance is already the Full Principal ($1000).
-                    # If we add Margin Used ($66) to it, we create Fake Money ($1066).
-                    
-                    # CORRECTION:
-                    # If Dry Run (Tracker Mode): Equity = Gross Balance + PnL
-                    # If Real Mode: Handled above by API.
                     
                     total_equity = self.market.balance + unrealized_pnl_usdt
                 
@@ -246,9 +234,6 @@ class TrendBot:
         allow_override = config.ALLOW_MOMENTUM_OVERRIDE
         
         mode_name = "SNIPER MODE (DAYTIME)"
-        
-        # No more Tokyo Guard logic needed since we don't trade Tokyo.
-        # logger.info(f"📅 CALENDAR MODE: {mode_name} | Min Score: {min_score_required} | Override: {allow_override}")
             
         symbols = await self.market.get_top_symbols(limit=None)
         final_candidates = []
@@ -271,7 +256,6 @@ class TrendBot:
                 if not tech_signal: return None
                 
                 # [REMOVED] WEEKDAY VOLUME FILTER
-                # User requested full Weekend Logic always.
                 
                 # --- MOMENTUM OVERRIDE CHECK ---
                 is_override = False
@@ -405,10 +389,6 @@ class TrendBot:
                     df_5m = await self.market.get_klines(symbol, interval='5m', limit=25)
                     if df_5m.empty: continue
                     
-                    # Calculate RSI for Trap Detection
-                    df_5m['rsi'] = self.detector.calculate_atr(df_5m) # Placeholder calc logic? No let's use Patterns
-                    # Actually we need PatternDetector instance to calc RSI quickly or manual calc
-                    # Let's do a quick manual RSI here to avoid overhead
                     try:
                         delta = df_5m['close'].diff()
                         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
@@ -471,7 +451,6 @@ class TrendBot:
         price = df.iloc[-1]['close']
         
         # 2. GET DYNAMIC SL/TP FROM SIGNAL (Titan V3)
-        # These were calculated by PatternDetector based on ATR/Volatility
         sl = signal.get('sl_price', 0)
         tp = signal.get('tp_price', 0)
         risk_pct = signal.get('risk_pct', config.RISK_PER_TRADE_PCT)
@@ -487,19 +466,14 @@ class TrendBot:
                 tp = price * (1 - config.TAKE_PROFIT_PCT/100)
 
         # 3. THE RISK VAULT: Calculate Position Size based on Risk
-        # TITAN V3: Use the Dynamic 'risk_pct' from the signal (0.5% - 2.0%)
-        # Note: We do not apply the "Casino Manager" scaler anymore because 
-        # Risk Factor is already built into risk_pct.
-        
         amount = self.market.calculate_position_size(symbol, price, sl, override_risk_pct=risk_pct)
         
         # LOW CAPITAL OVERRIDE: Force Minimum Size $12
-        # User Strategy: Ensure size is enough for 50% Partial Close ($6) > Min Notional ($5)
         if amount < 12.0:
             logger.info(f"⚠️ LOW CAP SIZE ADJUST: Boosting {symbol} position from ${amount:.2f} to $12.00 to enable Partial TP.")
             amount = 12.0
 
-        # Safety Check (should be covered by above, but keeping for logic integrity)
+        # Safety Check
         if amount < 6.0:
             logger.warning(f"⚠️ Position Size {amount:.2f} too small for {symbol}. Skipping.")
             return
@@ -511,18 +485,14 @@ class TrendBot:
             # Optional: Resize to Max Balance? No, violates Risk Vault. Skip.
             return
         
-        # logger.info(f"🔫 OPENING {symbol} ...") <- REMOVED to avoid confusion
-        
         result = await self.market.open_position(symbol, signal['direction'], amount, sl, tp)
         
         if result:
-            # INJECT STRATEGY MODE & DYNAMIC SCALP TARGET
+            # INJECT STRATEGY MODE
             mode = signal.get('strategy_mode', 'TREND')
-            partial_tp = signal.get('partial_tp_price', 0.0)
             
             if symbol in self.market.positions:
                  self.market.positions[symbol]['strategy_mode'] = mode
-                 self.market.positions[symbol]['partial_tp'] = partial_tp
             
             # LOG THE REAL EXECUTION PRICE (Honesty Fix)
             real_entry = result['entry_price']
@@ -540,10 +510,6 @@ class TrendBot:
             duration_sec = (datetime.now() - pos['entry_time']).total_seconds()
             
             # 1. HEARTBEAT MONITOR (LIFECYCLE TRACKER)
-            # Log the vital signs of the trade constantly
-            # ENABLED FOR ALL MODES (User Request)
-            
-            # Calculate Distances
             dist_tp_pct = abs(pos['tp'] - current_price) / current_price * 100
             dist_sl_pct = abs(current_price - pos['sl']) / current_price * 100
             
@@ -573,12 +539,9 @@ class TrendBot:
                         pnl_usdt = roi * pos['amount'] * config.LEVERAGE
                         self.tracker.record_trade(pnl_usdt, symbol)
                     else:
-                        # SURVIVAL MODE (Simple)
-                        # API Failed to close. We do NOT record loss. We wait for next loop.
-                        # If price recovers > SL, we survive.
                         logger.error(f"❌ CLOSE FAILED for {symbol}. Keeping position open for potential recovery.")
-                    
                     continue
+
                 if current_price >= pos['tp']:
                     await self.market.close_position(symbol, "TAKE PROFIT")
                     continue
@@ -593,12 +556,10 @@ class TrendBot:
                     if result:
                         # SUCCESS
                         self.blacklist.record_loss(symbol)
-                        # SHORT ROI = (Entry - Exit) / Entry
                         roi = (pos['entry_price'] - current_price) / pos['entry_price']
                         pnl_usdt = roi * pos['amount'] * config.LEVERAGE
                         self.tracker.record_trade(pnl_usdt, symbol)
                     else:
-                        # SURVIVAL MODE (Simple)
                         logger.error(f"❌ CLOSE FAILED for {symbol}. Keeping position open for potential recovery.")
                         
                     continue
@@ -611,133 +572,103 @@ class TrendBot:
                     await self.market.close_position(symbol, "TAKE PROFIT")
                     continue
             
-            # 1b. THE HARVESTER: Secure Profits (Break Even & Partial TP)
-            # We track R-Multiple (Profit / Risk) where Risk = |Entry - Initial SL|
-            # Note: We need to store Initial SL in pos dict. If not present, estimate it.
+            # A. STRATEGY SELECTION
+            mode = pos.get('strategy_mode', 'TREND')
             
-            initial_sl = pos.get('initial_sl', pos['sl']) # Fallback to current SL if missing
-            
-            # 1b. THE HARVESTER V2: Simplified ROI-Based Management
-            # We use strict ROI targets to secure bags early.
-            
-            # STATE TRACKING
-            has_moved_to_be = pos.get('be_locked', False)
-            has_taken_partial = pos.get('partial_taken', False)
-            
-            current_roi = pnl_pct
-            
-            # A. ADAPTIVE MANAGEMENT (Titan V4)
-            mode = pos.get('strategy_mode', 'TREND') # Legacy positions treated as TREND
-            
-            # --- SCALP MODE LOGIC ---
+            # --- SCALP MODE LOGIC (Quick & Dirty) ---
             if mode == 'SCALP':
                 # 1. Quick Break Even
-                if current_roi >= 0.015 and not has_moved_to_be: # 1.5% Trigger
-                     # Move SL to Entry
+                has_moved_to_be = pos.get('be_locked', False)
+                if pnl_pct >= 0.015 and not has_moved_to_be: # 1.5% ROI
                      buffer = 0.001
                      new_sl = pos['entry_price'] * (1 + buffer if pos['side'] == 'LONG' else 1 - buffer)
                      pos['sl'] = new_sl
                      pos['be_locked'] = True
                      logger.info(f"🛡️ SCALP: Fast BE locked for {symbol} @ {new_sl:.4f}")
 
-                # 2. Harvest (Partial Take Profit) - Dynamic ATR Target
+                # 2. Harvest (Partial Take Profit)
                 partial_tp = pos.get('partial_tp', 0.0)
                 harvest_triggered = False
-                
                 if partial_tp > 0:
                     if pos['side'] == 'LONG' and current_price >= partial_tp: harvest_triggered = True
                     if pos['side'] == 'SHORT' and current_price <= partial_tp: harvest_triggered = True
-                
-                # Fallback to old 2.0% if missing (Legacy)
-                if partial_tp == 0 and current_roi >= 0.020: harvest_triggered = True
+                elif pnl_pct >= 0.020: # Fallback
+                    harvest_triggered = True
                 
                 if harvest_triggered and not pos.get('harvested', False):
-                     # Close 50%
                      await self.market.close_position(symbol, "SCALP_HARVEST", params={'qty': pos['amount'] * 0.5})
                      pos['harvested'] = True
-                     logger.info(f"💰 SCALP: Harvested 50% of {symbol} @ {current_price:.4f} (Dynamic Target Hit)")
-                     
-            # --- TREND MODE LOGIC ---
-            else: # TREND
-                # 1. Patient Break Even
-                if current_roi >= 0.030 and not has_moved_to_be: # 3.0% Trigger
-                     buffer = 0.001
-                     new_sl = pos['entry_price'] * (1 + buffer if pos['side'] == 'LONG' else 1 - buffer)
-                     pos['sl'] = new_sl
-                     pos['be_locked'] = True
-                     logger.info(f"🛡️ TREND: Break Even locked for {symbol} @ {new_sl:.4f} (ROI > 3%)")
+                     logger.info(f"💰 SCALP: Harvested 50% of {symbol} @ {current_price:.4f}")
 
-            # B. PARTIAL PROFIT - DISABLED FOR TITAN V3 (PURE TREND)
-            # Logic Removed. We hold for the big move.
-            pass
-
-            # 1c. THE BLOODHOUND V3 (ATR Trailing Stop)
-            # Only trail IF we have already locked Break Even (Don't choke early trade)
-            if has_moved_to_be:
+            # --- TREND MODE LOGIC (The Ratchet) ---
+            else:
+                # TITAN V5: THE RATCHET (Protocol Fenix)
+                # Strategy: "Squeeze & Release". No partial sells. No fees. Just aggressive trailing.
+                
+                # 0. Get Volatility Data (ATR)
+                current_atr = 0.0
                 try:
-                    # Get ATR for current volatility
                     df_atr = await self.market.get_klines(symbol, interval=config.TIMEFRAME, limit=20)
                     if not df_atr.empty:
                         current_atr = self.detector.calculate_atr(df_atr).iloc[-1]
-                        
-                        # Determine Trailing Distance based on ROI
-                        # < 1% Profit: Loose (3x ATR)
-                        # > 1% Profit: Tightening (2x ATR)
-                        # > 3% Profit: Sniper (1.5x ATR)
-                        multiplier = 3.0
-                        if pnl_pct > 0.03: multiplier = 1.5
-                        elif pnl_pct > 0.01: multiplier = 2.0
-                        
-                        trailing_dist = current_atr * multiplier
-                        
-                        if pos['side'] == 'LONG':
-                            new_sl = current_price - trailing_dist
-                            # ONLY MOVE UP
-                            if new_sl > pos['sl']:
-                                pos['sl'] = new_sl
-                                logger.info(f"🐕 BLOODHOUND: Trailed SL for {symbol} to {new_sl:.4f} (Price {current_price:.4f} | ATR {current_atr:.4f})")
-                        else:
-                            new_sl = current_price + trailing_dist
-                            # ONLY MOVE DOWN
-                            if new_sl < pos['sl']:
-                                pos['sl'] = new_sl
-                                logger.info(f"🐕 BLOODHOUND: Trailed SL for {symbol} to {new_sl:.4f} (Price {current_price:.4f} | ATR {current_atr:.4f})")
-                except Exception as e:
-                    logger.error(f"Trailing Stop Error: {e}")
+                except: 
+                    pass 
 
-            # 2. Check Major Resistance (REAL TIME PROTECTION)
-            # We check this frequently to exit BEFORE SL if hitting a wall
-            df = await self.market.get_klines(symbol, interval=config.TIMEFRAME, limit=100)
-            if not df.empty:
-                major_levels = self.detector.find_major_levels(df)
-                for level in major_levels:
-                    # DISTINCTION: Support vs Resistance
-                    # LONG: We fear Resistance (Level > Price)
-                    # SHORT: We fear Support (Level < Price)
-                    
-                    is_threat = False
+                if current_atr > 0:
+                    # Calculate PnL in ATR units
+                    pnl_atr = 0.0
                     if pos['side'] == 'LONG':
-                        if level > current_price: # Resistance above
-                            is_threat = True
+                        pnl_atr = (current_price - pos['entry_price']) / current_atr
                     else:
-                        if level < current_price: # Support below
-                            is_threat = True
+                        pnl_atr = (pos['entry_price'] - current_price) / current_atr
                     
-                    if not is_threat: continue
+                    # --- PHASE 1: IMMORTAL LOCK (Hard Break Even) ---
+                    # Trigger: +1.0 ATR Profit
+                    if pnl_atr >= 1.0 and not pos.get('be_locked', False):
+                         # Move SL to Entry + Fees
+                         buffer = current_price * 0.001
+                         new_sl = pos['entry_price'] + buffer if pos['side'] == 'LONG' else pos['entry_price'] - buffer
+                         pos['sl'] = new_sl
+                         pos['be_locked'] = True
+                         logger.info(f"🔒 RATCHET: Immortal Lock activated for {symbol} @ {new_sl:.4f} (+1.0 ATR)")
 
-                    # CRITICAL FIX: DO NOT CLOSE LOSING TRADES DUE TO RESISTANCE
-                    # We only alert/close if we are protecting profits.
-                    # If we are underwater, we rely on the Stop Loss.
-                    if pnl_pct <= 0:
-                        continue
-
-                    dist = abs(current_price - level) / current_price
-                    if dist < 0.005: # Within 0.5% (Very close)
-                        # Only exit if we are LOSING momentum or STUCK
-                        if self.detector.check_exhaustion(df, pos['side']):
-                            type_str = "RESISTANCE" if pos['side'] == 'LONG' else "SUPPORT"
-                            await self.market.close_position(symbol, f"MAJOR {type_str} @ {level:.2f}")
-                            break
+                    # --- PHASE 2: THE STEP LADDER (Shadow Trailing) ---
+                    # We climb the ladder every 0.5 ATR gain.
+                    if pos.get('be_locked', False):
+                        # Current Step Level (Round down to nearest 0.5)
+                        current_step = int(pnl_atr * 2) / 2 
+                        
+                        if current_step >= 1.5:
+                            # Target SL is 0.5 ATR below current step
+                            target_sl_dist = (current_step - 0.5) * current_atr
+                            
+                            if pos['side'] == 'LONG':
+                                new_sl = pos['entry_price'] + target_sl_dist
+                                if new_sl > pos['sl']:
+                                    pos['sl'] = new_sl
+                                    logger.info(f"🪜 RATCHET: Climbing Ladder to {new_sl:.4f} (Step {current_step} ATR)")
+                            else:
+                                new_sl = pos['entry_price'] - target_sl_dist
+                                if new_sl < pos['sl']:
+                                    pos['sl'] = new_sl
+                                    logger.info(f"🪜 RATCHET: Climbing Ladder to {new_sl:.4f} (Step {current_step} ATR)")
+                
+                # --- PHASE 3: EXHAUSTION KILL (The Sniper Exit) ---
+                if pnl_pct > 0:
+                    df = await self.market.get_klines(symbol, interval=config.TIMEFRAME, limit=100)
+                    if not df.empty:
+                        major_levels = self.detector.find_major_levels(df)
+                        hit_wall = False
+                        for level in major_levels:
+                            dist = abs(current_price - level) / current_price
+                            if dist < 0.003: # Very Close (0.3%)
+                                 if pos['side'] == 'LONG' and level > current_price: hit_wall = True
+                                 if pos['side'] == 'SHORT' and level < current_price: hit_wall = True
+                        
+                        if hit_wall:
+                            if self.detector.check_exhaustion(df, pos['side']):
+                                 await self.market.close_position(symbol, "SNIPER EXIT (Resistance+Exhaustion)")
+                                 continue
 
             # 3. Time Constraints
             if duration_sec > config.MAX_POSITION_TIME_SEC:
