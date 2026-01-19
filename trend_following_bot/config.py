@@ -32,7 +32,7 @@ class Config:
     CONFIRM_RSI_MIN = 30.0           # Short: Stricter Oversold Check
     
     # Stability Filters (Anti-Loss)
-    MIN_VOLUME_USDT = 50000000       # 50M Minimum Volume (Majors Only)
+    MIN_VOLUME_USDT = 10000000       # 10M Minimum Volume (Broad Market)
     MAX_DAILY_CHANGE_PCT = 30.0      # Ignore coins that pumped > 30% (Too late)
     MIN_DAILY_CHANGE_PCT = 1.0       # Ignore dead coins (< 1% move)
     TREND_ALIGN_INTERVAL = '1h'      # Check 1H Trend Line
@@ -55,7 +55,7 @@ class Config:
     STOP_LOSS_PCT = 1.5              # Base Stop distance (will be dynamic)
     TAKE_PROFIT_PCT = 25.0           # INFINITY MODE: 25% Ceiling (Let Trailing Stop exit)
     
-    MAX_OPEN_POSITIONS = 10          # Restore missing config
+    MAX_OPEN_POSITIONS = 5          # Limit to 5 Concurrent Trades (Waterfall Focus)
     CAPITAL_PER_TRADE_PCT = 0.0      # DEPRECATED in favor of Risk Sizing
     LEVERAGE = 5                     # 5x
     

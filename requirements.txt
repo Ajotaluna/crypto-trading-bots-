@@ -1,7 +1,8 @@
 pandas
 numpy
 requests
-
+ccxt
 python-binance
 scipy
-# Optional: ccxt if we switch later, but using requests for now
+urllib3
+python-dotenv

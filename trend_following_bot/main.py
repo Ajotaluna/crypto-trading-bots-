@@ -62,7 +62,7 @@ class TrendBot:
             self.safety_loop(),
             self.reporting_loop(),
             self.confirmation_loop(),
-            self.slow_scan()
+            self.continuous_scanner_loop()
         )
         
     async def safety_loop(self):
@@ -171,176 +171,132 @@ class TrendBot:
                 logger.error(f"Reporting Loop Error: {e}")
                 await asyncio.sleep(60)
 
-    async def slow_scan(self):
-        """BACKGROUND LOOP: Batch Scan & Fill (Every 60s)"""
-        logger.info("Started Batch Scanner...")
+    async def continuous_scanner_loop(self):
+        """WATERFALL FINDER: Prioritized Continuous Scanning"""
+        logger.info("🌊 Started Waterfall Scanner (Continuous Flow)...")
+        
         while self.running:
             try:
-                # Only scan if we have empty slots
-                open_slots = config.MAX_OPEN_POSITIONS - len(self.market.positions)
+                # 1. Capacity Check
+                if len(self.market.positions) >= config.MAX_OPEN_POSITIONS:
+                    logger.info("Slots full (5/5). Scanner sleeping...")
+                    await asyncio.sleep(30)
+                    continue
+
+                # 2. Refresh Priority List (Every Cycle)
+                # Fetch ALL pairs (Filtered by Volume > 10M) sorted by Volume
+                symbols = await self.market.get_top_symbols(limit=None) 
                 
-                if open_slots > 0:
-                    logger.info(f"Scanning to fill {open_slots} slots...")
-                    await self.scan_and_fill_batch(open_slots)
-                else:
-                    logger.info("Slots full (10/10). Waiting for positions to close...")
-                    # IMPORTANT: Wait to prevent tight loop if full
-                    await asyncio.sleep(60) 
-                    continue # Skip the rest of loop to re-check
+                # 3. Global Conditions (Once per cycle)
+                btc_trend = await self.market.get_btc_trend()
+                if btc_trend < -0.01:
+                    logger.warning(f"🛡️ KING'S GUARD: BTC Crash ({btc_trend*100:.2f}%). Pausing.")
+                    await asyncio.sleep(60)
+                    continue
+                    
+                # 4. WATERFALL EXECUTION
+                for symbol in symbols:
+                    # Re-check capacity (Crucial for waterfall)
+                    if len(self.market.positions) >= config.MAX_OPEN_POSITIONS: 
+                        break
+                        
+                    # Skip active positions
+                    if symbol in self.market.positions or symbol in self.pending_entries:
+                        continue
+                        
+                    # High Frequency Pacing (0.2s = ~300 pairs/min)
+                    await asyncio.sleep(0.2) 
+                    
+                    # DISPATCH ANALYZER (Fire and Forget logic within loop)
+                    # We await the result to keep order priority, but execution is async
+                    candidate = await self.analyze_single_symbol(symbol, btc_trend)
+                    
+                    if candidate:
+                        logger.info(f"✨ OPPORTUNITY FOUND: {symbol} (Score {candidate['score']}) -> Dispatching!")
+                        
+                        # Dispatch to Execution/Pending (Non-blocking the next symbol analysis? 
+                        # Actually we want to process this one first to fill the slot)
+                        
+                        if config.SMART_ENTRY_ENABLED:
+                            await self.add_to_pending(candidate['symbol'], candidate['signal'], candidate['df'])
+                        else:
+                            await self.execute_trade(candidate['symbol'], candidate['signal'], candidate['df'])
+                            
+                        # If trade executed, loop continues. 
+                        # If slot filled, inner re-check will catch it.
                 
-                await asyncio.sleep(config.CHECK_INTERVAL)
+                logger.info("Cycle Complete. Restarting Waterfall...")
+                await asyncio.sleep(5)
                 
             except Exception as e:
-                logger.error(f"Batch Loop Error: {e}")
+                logger.error(f"Scanner Loop Error: {e}")
                 await asyncio.sleep(5)
 
-    async def scan_and_fill_batch(self, slots_needed):
-        """Analyze market and pick TOP N candidates (Parallel Engine)"""
-        # 0. THE KING'S GUARD (BTC Trend Filter)
-        btc_trend = await self.market.get_btc_trend()
-        
-        if btc_trend < -0.01: # Check for CRASH (Net Drop > 1%)
-            logger.warning(f"🛡️ KING'S GUARD: BTC IS CRASHING ({btc_trend*100:.2f}%)! Pausing Scans.")
-            return
-
-        # 0b. THE WATCHTOWER (Market Breadth)
-        breadth = await self.market.get_market_breadth(limit=50)
-        logger.info(f"🔭 WATCHTOWER: Market Sentiment: {breadth['bullish_pct']:.1f}% Bullish ({breadth['sentiment']})")
-
-        # CALENDAR FILTER & PROFIT STOP (USER REQUEST)
-        today = datetime.now()
-        current_hour = today.utcnow().hour
-        is_tokyo_blackout = 3 <= current_hour < 10
-        
-        # Check Daily Profit Target
-        daily_target_hit = False
+    async def analyze_single_symbol(self, symbol, btc_trend):
+        """Analyze ONE symbol fully"""
         try:
-            current_pnl_pct = self.pnl_tracker.current_pnl_pct * 100 # Convert to %
-            if current_pnl_pct >= config.DAILY_PROFIT_TARGET_PCT:
-                daily_target_hit = True
-        except:
-            pass # PnL tracker might not be ready
-
-        # ------------------------------------------------------------------
-        # BLACKOUTS REMOVED - 24/7 OPERATION
-        # ------------------------------------------------------------------
-        pass
-
-        # ------------------------------------------------------------------
-        # ACTIVE TRADING MODE (09:00 - 23:59 UTC)
-        # ------------------------------------------------------------------
-        # Base Settings (Sniper Mode Defaults)
-        min_score_required = config.MIN_SIGNAL_SCORE
-        allow_override = config.ALLOW_MOMENTUM_OVERRIDE
-        
-        mode_name = "SNIPER MODE (DAYTIME)"
+            # Blacklist Check
+            if not self.blacklist.is_allowed(symbol): return None
             
-        symbols = await self.market.get_top_symbols(limit=None)
-        final_candidates = []
-        loop = asyncio.get_running_loop()
-
-        # --- PARALLEL ANALYSIS ENGINE ---
-        async def analyze_symbol(symbol):
-            try:
-                # Blacklist Check
-                if not self.blacklist.is_allowed(symbol): return None
-                if symbol in self.market.positions: return None
+            # 1. Fetch Data
+            df = await self.market.get_klines(symbol, interval=config.TIMEFRAME, limit=500)
+            df_daily = await self.market.get_klines(symbol, interval='1d', limit=90)
+            if df.empty or df_daily.empty: return None
+            
+            # 2. Analyze Technicals (CPU Bound - Run in Executor)
+            loop = asyncio.get_running_loop()
+            tech_signal = await loop.run_in_executor(
+                self.executor, 
+                self.detector.analyze, 
+                df, df_daily, btc_trend
+            )
+            
+            if not tech_signal: return None
+            
+            # 3. Validation Logic
+            min_score = config.MIN_SIGNAL_SCORE
+            
+            # Momentum Override
+            is_override = False
+            if config.ALLOW_MOMENTUM_OVERRIDE and tech_signal['score'] >= config.MOMENTUM_SCORE_THRESHOLD:
+                is_override = True
                 
-                # 1. Fetch Data
-                df = await self.market.get_klines(symbol, interval=config.TIMEFRAME)
-                df_daily = await self.market.get_klines(symbol, interval='1d', limit=90)
-                if df.empty or df_daily.empty: return None
+            if not is_override:
+                if tech_signal['score'] < min_score: return None
                 
-                # 2. Analyze Technicals
-                tech_signal = await loop.run_in_executor(self.executor, self.detector.analyze, df, df_daily, btc_trend)
-                if not tech_signal: return None
+                # King's Guard
+                if btc_trend < -0.01 and tech_signal['direction'] == 'LONG': return None
+                if btc_trend > 0.01 and tech_signal['direction'] == 'SHORT': return None
                 
-                # [REMOVED] WEEKDAY VOLUME FILTER
-                
-                # --- MOMENTUM OVERRIDE CHECK ---
-                is_override = False
-                if allow_override:
-                    if tech_signal['score'] >= config.MOMENTUM_SCORE_THRESHOLD:
-                        is_override = True
-                
-                # 3. TITAN DATA & CHECKS
-                if not is_override:
-                    if tech_signal['score'] < min_score_required: return None
+                # Titan Sentiment
+                try:
+                    oi_data = await self.market.get_open_interest(symbol, period='1h')
+                    top_ls = await self.market.get_top_long_short_ratio(symbol, period='1h')
+                    gl_ls = await self.market.get_global_long_short_ratio(symbol, period='1h')
                     
+                    sentiment = SentimentAnalyzer.analyze_sentiment(oi_data, top_ls, gl_ls)
                     
-                    # King's Guard (Already handled in analyze, but double check doesn't hurt)
-                    if btc_trend < -0.01 and tech_signal['direction'] == 'LONG': return None
-                    if btc_trend > 0.01 and tech_signal['direction'] == 'SHORT': return None
-
-                    # Titan Sentiment (Simplified for speed in parallel)
-                    try:
-                        oi_data = await self.market.get_open_interest(symbol, period='1h')
-                        top_ls_data = await self.market.get_top_long_short_ratio(symbol, period='1h')
-                        global_ls_data = await self.market.get_global_long_short_ratio(symbol, period='1h')
-                        sentiment = SentimentAnalyzer.analyze_sentiment(oi_data, top_ls_data, global_ls_data)
+                    valid = False
+                    if tech_signal['direction'] == 'LONG' and sentiment['signal'] == 'BULLISH':
+                        valid = True
+                        tech_signal['score'] += 10
+                    elif tech_signal['direction'] == 'SHORT' and sentiment['signal'] == 'BEARISH':
+                        valid = True
+                        tech_signal['score'] += 10
                         
-                        valid_titan = False
-                        if tech_signal['direction'] == 'LONG' and sentiment['signal'] == 'BULLISH':
-                            valid_titan = True
-                            tech_signal['score'] += 10
-                        elif tech_signal['direction'] == 'SHORT' and sentiment['signal'] == 'BEARISH':
-                            valid_titan = True
-                            tech_signal['score'] += 10
-                            
-                        if not valid_titan: return None
-                    except:
-                        # If Titan API fails, be conservative and skip finding
-                        return None
-                
-                return {
-                    'symbol': symbol,
-                    'df': df,
-                    'signal': tech_signal,
-                    'score': tech_signal['score'],
-                    'is_override': is_override
-                }
-            except Exception as e:
-                return None
-
-        # EXECUTE PARALLEL ANALYSIS
-        logger.info(f"⚡ Analyzing {len(symbols)} pairs in PARALLEL...")
-        results = await asyncio.gather(*[analyze_symbol(sym) for sym in symbols])
-        
-        # Filter valid results
-        final_candidates = [r for r in results if r is not None]
-
-        # Sort by Score (Highest first)
-        final_candidates.sort(key=lambda x: x['score'], reverse=True)
-        
-        # Pick Top N
-        top_picks = final_candidates[:slots_needed]
-        
-        if top_picks:
-            logger.info(f"Found {len(top_picks)} candidates. Processing...")
-            for pick in top_picks:
-                
-                # STABILITY FILTER V5: Trend Alignment
-                # Weekday Rule: MANDATORY ALIGNMENT (No excuses)
-                # Weekend Rule (Now 24/7): Skippable for Overrides
-                if pick['is_override']: must_align = False
-                
-                if must_align:
-                    try:
-                        df_1h = await self.market.get_klines(pick['symbol'], interval=config.TREND_ALIGN_INTERVAL, limit=config.TREND_ALIGN_EMA + 10)
-                        if not df_1h.empty and len(df_1h) > config.TREND_ALIGN_EMA: 
-                            ema_200 = df_1h['close'].ewm(span=config.TREND_ALIGN_EMA, adjust=False).mean().iloc[-1]
-                            price = df_1h.iloc[-1]['close']
-                            # COUNTER TREND CHECK
-                            if pick['signal']['direction'] == 'LONG' and price < ema_200: continue
-                            if pick['signal']['direction'] == 'SHORT' and price > ema_200: continue
-                    except: pass
-                
-                if config.SMART_ENTRY_ENABLED:
-                    await self.add_to_pending(pick['symbol'], pick['signal'], pick['df'])
-                else:
-                    await self.execute_trade(pick['symbol'], pick['signal'], pick['df'])
-        else:
-            logger.info("No suitable candidates found.")
+                    if not valid: return None
+                except:
+                    return None # Fail safe
+            
+            return {
+                'symbol': symbol,
+                'signal': tech_signal,
+                'df': df,
+                'score': tech_signal['score']
+            }
+            
+        except Exception as e:
+            return None
 
     async def check_watchlist(self):
         """Legacy method"""
