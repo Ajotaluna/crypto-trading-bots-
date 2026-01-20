@@ -16,6 +16,11 @@ SCAN_ALL_MARKET = True
 Top_Limit = None 
 MIN_DAILY_VOLUME = 10_000_000 # Filter: Only pairs with > $10M Volume
 
+# SIMULATION CONFIG
+INITIAL_BALANCE = 500.0   # USDT
+RISK_PER_TRADE_PCT = 2.0  # 2% Risk ($10)
+RISK_AMOUNT = INITIAL_BALANCE * (RISK_PER_TRADE_PCT / 100)
+
 # 20 Selected Pairs (Fallback/Reference)
 PAIRS = [
     'ETHUSDT', 'BNBUSDT', 'LTCUSDT', 'XRPUSDT', 'SOLUSDT',
