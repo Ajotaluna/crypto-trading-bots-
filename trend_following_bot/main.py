@@ -51,8 +51,10 @@ class TrendBot:
         self.pending_entries = {}
         self.trap_blacklist = {} 
         
-        # PRODUCTION TRADING LIST
-        self.active_trading_list = []
+        # PRODUCTION TRADING LIST (Pre-load Majors)
+        self.active_trading_list = list(self.calibrator.vip_majors)
+        if self.active_trading_list:
+            logger.info(f"🚀 BOOTSTRAP: Loaded {len(self.active_trading_list)} Major Pairs immediately.")
         
         # SHADOW MODE STATE MACHINE (Pre-Ban Logic)
         self.pair_states = {} 
