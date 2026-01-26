@@ -314,44 +314,46 @@ class MarketData:
             logger.error(f"Failed to fetch Gainers: {e}")
             return []
 
-    async def get_top_symbols(self, limit=None):
-        """Get top volume USDT pairs"""
+    async def get_top_gainers(self, limit=20):
+        """Fetch Top Gaining Pairs (Vol > 5M)"""
+        return await self._get_ranked_pairs(rank_by='priceChangePercent', limit=limit, min_vol=5000000)
+
+    async def get_top_volume_pairs(self, limit=50):
+        """Fetch Top Volume Pairs"""
+        return await self._get_ranked_pairs(rank_by='quoteVolume', limit=limit, min_vol=config.MIN_VOLUME_USDT)
+
+    async def _get_ranked_pairs(self, rank_by='quoteVolume', limit=20, min_vol=1000000):
+        """Generic Ranking Helper"""
+
         try:
-            # Real API call for symbols to be realistic
             resp = self.session.get(f"{self.base_url}/fapi/v1/ticker/24hr", timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
-                
-                # STABILITY FILTER V4:
-                # 1. Volume > 50M (Top Tier)
-                # 2. Change < 30% (Not Pumping)
-                # 3. Change > 1% (Not Dead)
                 valid_pairs = []
+                
                 for x in data:
                     if not x['symbol'].endswith('USDT'): continue
-                    
                     try:
                         vol = float(x['quoteVolume'])
-                        change = float(x['priceChangePercent'])
+                        if vol < min_vol: continue
                         
-                        if vol < config.MIN_VOLUME_USDT: continue
-                        if abs(change) > config.MAX_DAILY_CHANGE_PCT: continue # Too volatile
-                        if abs(change) < config.MIN_DAILY_CHANGE_PCT: continue # Dead
+                        # Add value for sorting
+                        x['_rank_val'] = float(x[rank_by])
                         
                         valid_pairs.append(x)
                     except: continue
 
-                valid_pairs.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
+                # Sort
+                valid_pairs.sort(key=lambda x: x['_rank_val'], reverse=True)
                 
-                if limit:
-                    return [x['symbol'] for x in valid_pairs[:limit]]
-                else:
-                    return [x['symbol'] for x in valid_pairs]
+                return [x['symbol'] for x in valid_pairs[:limit]]
         except Exception as e:
-            logger.error(f"Failed to fetch symbols: {e}")
-        
-        # Fallback (Safe Majors)
-        return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT']
+            logger.error(f"Ranking Error: {e}")
+            return []
+            
+    # Alias for backward compatibility if needed
+    async def get_top_symbols(self, limit=50):
+        return await self.get_top_volume_pairs(limit)
 
     async def get_klines(self, symbol, interval='15m', limit=100, start_time=None):
         """Fetch candlestick data (Non-Blocking)"""
