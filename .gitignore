@@ -1,27 +1,23 @@
-# Python
+# System
 __pycache__/
 *.py[cod]
 *$py.class
-
-# Environment variables
-.env
-.env.local
-
-# Logs
-*.log
-logs/
-
-# IDEs
+  *.log
 .vscode/
 .idea/
-
-# Local artifacts
-.gemini/
-
-# Sensitive Keys
+.env
+.venv/
 *.pem
-*.key
-
-#Dir
-FortressBot/
+*.csv
+# App Data (Ephemeral/Cache)
+calibration_data/
+backtest_data/
 data_cache/
+
+# Logs
+trend_bot.log
+backtest_results/
+
+# Temp
+porqueria.txt
+stats.json

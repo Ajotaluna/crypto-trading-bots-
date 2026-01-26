@@ -1,0 +1,57 @@
+{
+    "vip_majors": [
+        "BTCUSDT",
+        "BNBUSDT",
+        "SOLUSDT",
+        "XRPUSDT",
+        "DOTUSDT"
+    ],
+    "major_subgroups": {
+        "stable_majors": [
+            "BNBUSDT",
+            "DOTUSDT",
+            "XRPUSDT"
+        ]
+    },
+    "vip_grinders": [
+        "TRXUSDT",
+        "SUIUSDT",
+        "ADAUSDT",
+        "AVAXUSDT",
+        "LINKUSDT",
+        "ETHUSDT"
+    ],
+    "grinder_subgroups": {
+        "proven_winners": [
+            "TRXUSDT",
+            "SUIUSDT",
+            "ADAUSDT",
+            "AVAXUSDT",
+            "LINKUSDT",
+            "ETHUSDT"
+        ]
+    },
+    "vip_scalpers": [
+        "WIFUSDT",
+        "FLOKIUSDT",
+        "PEPEUSDT",
+        "ORDIUSDT",
+        "MEMEUSDT"
+    ],
+    "scalper_subgroups": {
+        "group_a": [
+            "WIFUSDT",
+            "FLOKIUSDT",
+            "PEPEUSDT"
+        ],
+        "group_b": [
+            "ORDIUSDT",
+            "MEMEUSDT"
+        ]
+    },
+    "calibration_settings": {
+        "limit": 6000,
+        "min_win_rate": 40.0,
+        "min_profit_pct": 10.0
+    }
+}

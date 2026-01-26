@@ -144,6 +144,33 @@ class MarketData:
                 return None
         return None
 
+    async def ensure_symbol_settings(self, symbol):
+        """
+        SAFETY CHECK: Enforce Isolated Margin & Leverage
+        """
+        if self.is_dry_run: return True
+        
+        try:
+            # 1. Set Margin Type -> ISOLATED
+            # This endpoint throws error if already set, so we ignore specific error code -4046
+            await self._signed_request('POST', '/fapi/v1/marginType', {
+                'symbol': symbol,
+                'marginType': config.MARGIN_TYPE # 'ISOLATED'
+            })
+        except Exception:
+            pass # Likely already set, proceed.
+
+        try:
+            # 2. Set Leverage -> 5x
+            await self._signed_request('POST', '/fapi/v1/leverage', {
+                'symbol': symbol,
+                'leverage': config.LEVERAGE
+            })
+        except Exception as e:
+            logger.error(f"Failed to set Leverage/Margin for {symbol}: {e}")
+            return False
+            
+        return True
     def _validate_order_compliance(self, symbol, qty, price, info):
         """
         THE GATEKEEPER: Strict Order Validation (Local Pre-Flight Check).
@@ -258,6 +285,35 @@ class MarketData:
             return None
         return None
         
+    async def get_market_trends(self, limit=20):
+        """
+        Get Top Gainers (Market Trends) regardless of Volume.
+        User Requirement: 'Trends of the day even if Vol < 10M'
+        """
+        try:
+            resp = self.session.get(f"{self.base_url}/fapi/v1/ticker/24hr", timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                valid_pairs = []
+                for x in data:
+                    if not x['symbol'].endswith('USDT'): continue
+                    try:
+                        change = float(x['priceChangePercent'])
+                        # Valid Trend: Positive momentum or High Volatility
+                        # Minimal filter to avoid dead coins, but allow low cap runners
+                        if abs(change) < 3.0: continue # Skip stable coins/boring
+                        
+                        valid_pairs.append(x)
+                    except: continue
+
+                # Sort by % Change (Gainers First)
+                valid_pairs.sort(key=lambda x: float(x['priceChangePercent']), reverse=True)
+                
+                return [x['symbol'] for x in valid_pairs[:limit]]
+        except Exception as e:
+            logger.error(f"Failed to fetch Gainers: {e}")
+            return []
+
     async def get_top_symbols(self, limit=None):
         """Get top volume USDT pairs"""
         try:

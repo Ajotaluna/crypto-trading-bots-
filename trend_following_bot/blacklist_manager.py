@@ -64,6 +64,16 @@ class BlacklistManager:
             'reason': reason
         }
         logger.warning(f"🚫 BANNED {symbol} for {duration_hours}h. Reason: {reason}")
+        
+        # PERMANENT REMOVAL FROM VIP LIST (If repeated offender)
+        if "Consecutive Losses" in reason:
+             try:
+                 from calibration import CalibrationManager
+                 cm = CalibrationManager()
+                 cm.ban_candidate(symbol)
+             except Exception as e:
+                 logger.error(f"Failed to remove {symbol} from Config: {e}")
+                 
         self.save()
 
     def is_allowed(self, symbol):

@@ -58,6 +58,8 @@ class Config:
     MAX_OPEN_POSITIONS = 5          # Limit to 5 Concurrent Trades (Waterfall Focus)
     CAPITAL_PER_TRADE_PCT = 0.0      # DEPRECATED in favor of Risk Sizing
     LEVERAGE = 5                     # 5x
+    MARGIN_TYPE = 'ISOLATED'         # ISOLATED or CROSSED
+
     
     # Dynamic TP/SL Lookback
     LOOKBACK_WINDOW_SL = 20          # Recent Low/High for Stop Loss
