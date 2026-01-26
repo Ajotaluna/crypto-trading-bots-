@@ -179,11 +179,9 @@ class CalibrationManager:
         # 1. Load Existing Licenses
         license_map = self.load_strategy_map()
         current_time = time.time()
-        expiry_seconds = 7 * 24 * 3600 # 7 Days
-        
-        # Load targets from Config
-        min_wr = self.calib_settings.get('min_win_rate', 40.0)
-        min_pnl = self.calib_settings.get('min_profit_pct', 10.0)
+        expiry_seconds = self.calib_settings.get('license_expiry_hours', 4) * 3600
+        min_pnl = self.calib_settings.get('min_pnl_pct', 10.0)
+        min_wr = self.calib_settings.get('min_win_rate', 50.0)
         
         approved_pairs = {}
         
