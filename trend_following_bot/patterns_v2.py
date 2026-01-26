@@ -24,9 +24,10 @@ class PatternDetector:
         return 300
 
     def __init__(self):
+        import os
         self.reasons = []
         self.strategy_map = {} 
-        self.config_file = "market_config.json"
+        self.config_file = os.path.join(os.path.dirname(__file__), "market_config.json")
         
         # Load Config
         self._load_config()

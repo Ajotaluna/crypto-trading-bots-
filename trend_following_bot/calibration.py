@@ -26,8 +26,8 @@ class CalibrationManager:
         self.exchange = ccxt.binance()
         self.detector = PatternDetector()
         self.use_cache = use_cache
-        self.data_dir = "calibration_data"
-        self.config_file = "market_config.json"
+        self.data_dir = os.path.join(os.path.dirname(__file__), "calibration_data")
+        self.config_file = os.path.join(os.path.dirname(__file__), "market_config.json")
         
         self.vip_majors = []
         self.vip_grinders = []
@@ -176,12 +176,15 @@ class CalibrationManager:
         """
         Main Routine: The Strategy Tournament (Optimized with Licenses).
         """
+        
         # 1. Load Existing Licenses
         license_map = self.load_strategy_map()
         current_time = time.time()
         expiry_seconds = self.calib_settings.get('license_expiry_hours', 4) * 3600
-        min_pnl = self.calib_settings.get('min_pnl_pct', 10.0)
-        min_wr = self.calib_settings.get('min_win_rate', 50.0)
+        
+        # Explicit Definition to avoid NameError
+        min_pnl = float(self.calib_settings.get('min_pnl_pct', 10.0))
+        min_wr = float(self.calib_settings.get('min_win_rate', 40.0))
         
         approved_pairs = {}
         
