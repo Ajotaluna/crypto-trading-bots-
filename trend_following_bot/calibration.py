@@ -32,6 +32,7 @@ class CalibrationManager:
         self.vip_majors = []
         self.vip_grinders = []
         self.vip_scalpers = []
+        self.calib_settings = {} # Default Init
         
         self._load_market_config()
         
