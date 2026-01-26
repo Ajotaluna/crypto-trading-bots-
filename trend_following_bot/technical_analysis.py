@@ -5,6 +5,7 @@ import ta
 class TechnicalAnalysis:
     """
     Centralized Indicator Calculation (Using 'ta' library).
+    Fixes SettingWithCopyWarning by forcing a copy.
     """
     @staticmethod
     def calculate_indicators(df):
@@ -12,10 +13,13 @@ class TechnicalAnalysis:
         # Ensure we have data
         if df is None or len(df) < 50: return df
 
+        # FORCE COPY to avoid SettingWithCopyWarning
+        df = df.copy()
+
         # 1. Trend: EMA 200, EMA 50, EMA 5, EMA 20
         df['ema_200'] = ta.trend.EMAIndicator(df['close'], window=200).ema_indicator()
         df['ema_50'] = ta.trend.EMAIndicator(df['close'], window=50).ema_indicator()
-        df['ema_20'] = ta.trend.EMAIndicator(df['close'], window=20).ema_indicator() # Added EMA 20 explicit
+        df['ema_20'] = ta.trend.EMAIndicator(df['close'], window=20).ema_indicator()
         df['ema_5'] = ta.trend.EMAIndicator(df['close'], window=5).ema_indicator()
         
         # 2. Oscillator: RSI 14
@@ -37,7 +41,6 @@ class TechnicalAnalysis:
         df['sma_20'] = bb_ind.bollinger_mavg()
         
         # 6. Trend Strength: ADX 14
-        # Note: ta library default window is 14
         adx_ind = ta.trend.ADXIndicator(df['high'], df['low'], df['close'], window=14)
         df['adx'] = adx_ind.adx()
         
@@ -45,6 +48,7 @@ class TechnicalAnalysis:
         df['vol_ma'] = ta.trend.SMAIndicator(df['volume'], window=20).sma_indicator()
         
         # Fill NaN (Backtest safety)
-        df.fillna(method='bfill', inplace=True)
+        # Fix FutureWarning: use ffill/bfill directly
+        df.bfill(inplace=True) 
         
         return df
