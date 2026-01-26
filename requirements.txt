@@ -6,3 +6,4 @@ python-binance
 scipy
 urllib3
 python-dotenv
+pandas_ta
