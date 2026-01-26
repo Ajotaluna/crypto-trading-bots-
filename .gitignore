@@ -17,6 +17,7 @@ data_cache/
 # Logs
 trend_bot.log
 backtest_results/
+fortress_bot/
 
 # Temp
 porqueria.txt
