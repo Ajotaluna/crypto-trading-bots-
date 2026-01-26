@@ -6,4 +6,4 @@ python-binance
 scipy
 urllib3
 python-dotenv
-git+https://github.com/twopirllc/pandas-ta.git@development
+ta

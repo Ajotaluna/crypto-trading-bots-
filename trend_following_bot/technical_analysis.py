@@ -1,10 +1,10 @@
 import pandas as pd
 import numpy as np
-import pandas_ta as ta
+import ta
 
 class TechnicalAnalysis:
     """
-    Centralized Indicator Calculation.
+    Centralized Indicator Calculation (Using 'ta' library).
     """
     @staticmethod
     def calculate_indicators(df):
@@ -12,49 +12,39 @@ class TechnicalAnalysis:
         # Ensure we have data
         if df is None or len(df) < 50: return df
 
-        # 1. Trend: EMA 200, EMA 50, EMA 5
-        df['ema_200'] = ta.ema(df['close'], length=200)
-        df['ema_50'] = ta.ema(df['close'], length=50)
-        df['ema_5'] = ta.ema(df['close'], length=5)
+        # 1. Trend: EMA 200, EMA 50, EMA 5, EMA 20
+        df['ema_200'] = ta.trend.EMAIndicator(df['close'], window=200).ema_indicator()
+        df['ema_50'] = ta.trend.EMAIndicator(df['close'], window=50).ema_indicator()
+        df['ema_20'] = ta.trend.EMAIndicator(df['close'], window=20).ema_indicator() # Added EMA 20 explicit
+        df['ema_5'] = ta.trend.EMAIndicator(df['close'], window=5).ema_indicator()
         
         # 2. Oscillator: RSI 14
-        df['rsi'] = ta.rsi(df['close'], length=14)
+        df['rsi'] = ta.momentum.RSIIndicator(df['close'], window=14).rsi()
         
         # 3. Volatility: ATR 14
-        df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14)
+        df['atr'] = ta.volatility.AverageTrueRange(df['high'], df['low'], df['close'], window=14).average_true_range()
         
         # 4. Momentum: MACD (12, 26, 9)
-        macd = ta.macd(df['close'], fast=12, slow=26, signal=9)
-        # macd columns: MACD_12_26_9, MACDs_12_26_9, MACDh_12_26_9
-        # Rename for easier access
-        df['macd'] = macd['MACD_12_26_9']
-        df['signal'] = macd['MACDs_12_26_9']
-        df['hist'] = macd['MACDh_12_26_9']
+        macd_ind = ta.trend.MACD(df['close'], window_slow=26, window_fast=12, window_sign=9)
+        df['macd'] = macd_ind.macd()
+        df['signal'] = macd_ind.macd_signal()
+        df['hist'] = macd_ind.macd_diff()
         
         # 5. Bands: Bollinger (20, 2)
-        bb = ta.bbands(df['close'], length=20, std=2)
-        
-        # Robust Column Extraction
-        if bb is not None and not bb.empty:
-            lower_col = next((c for c in bb.columns if c.startswith('BBL')), None)
-            upper_col = next((c for c in bb.columns if c.startswith('BBU')), None)
-            mid_col   = next((c for c in bb.columns if c.startswith('BBM')), None)
-            
-            if lower_col and upper_col and mid_col:
-                df['lower_bb'] = bb[lower_col]
-                df['upper_bb'] = bb[upper_col]
-                df['sma_20'] = bb[mid_col]
-            else:
-                 # Fallback if TA fails
-                df['sma_20'] = df['close'].rolling(20).mean()
-                df['upper_bb'] = df['sma_20'] + (df['close'].rolling(20).std() * 2)
-                df['lower_bb'] = df['sma_20'] - (df['close'].rolling(20).std() * 2)
+        bb_ind = ta.volatility.BollingerBands(df['close'], window=20, window_dev=2)
+        df['upper_bb'] = bb_ind.bollinger_hband()
+        df['lower_bb'] = bb_ind.bollinger_lband()
+        df['sma_20'] = bb_ind.bollinger_mavg()
         
         # 6. Trend Strength: ADX 14
-        adx = ta.adx(df['high'], df['low'], df['close'], length=14)
-        df['adx'] = adx['ADX_14']
+        # Note: ta library default window is 14
+        adx_ind = ta.trend.ADXIndicator(df['high'], df['low'], df['close'], window=14)
+        df['adx'] = adx_ind.adx()
         
         # 7. Volume Moving Average
-        df['vol_ma'] = ta.sma(df['volume'], length=20)
+        df['vol_ma'] = ta.trend.SMAIndicator(df['volume'], window=20).sma_indicator()
+        
+        # Fill NaN (Backtest safety)
+        df.fillna(method='bfill', inplace=True)
         
         return df
