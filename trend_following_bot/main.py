@@ -16,6 +16,7 @@ from win_rate_tracker import WinRateTracker
 import pandas as pd
 from blacklist_manager import BlacklistManager
 from calibration import CalibrationManager # NEW: Production Calibration Engine
+from technical_analysis import TechnicalAnalysis # For local indicator calc
 
 # Local imports
 from config import config
@@ -299,6 +300,9 @@ class TrendBot:
             df = await self.market.get_klines(symbol, interval=config.TIMEFRAME, limit=required_limit)
             df_daily = await self.market.get_klines(symbol, interval='1d', limit=90)
             if df.empty or df_daily.empty: return None
+            
+            # CALCULATE INDICATORS LOCALLY (To fix ATR missing error)
+            df = TechnicalAnalysis.calculate_indicators(df)
             
             loop = asyncio.get_running_loop()
             tech_signal = await loop.run_in_executor(
