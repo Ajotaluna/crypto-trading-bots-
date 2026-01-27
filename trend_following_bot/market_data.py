@@ -778,27 +778,37 @@ class MarketData:
         
         if self.is_dry_run:
             # MOCK CLOSE (LIFECYCLE TRACKER)
+            # Calculate Value
+            exit_value = qty_to_close * price
+            entry_value = qty_to_close * pos['entry_price']
+            
             if pos['side'] == 'LONG':
+                pnl_usdt = (exit_value - entry_value)
                 pnl_pct = (price - pos['entry_price']) / pos['entry_price']
             else:
+                pnl_usdt = (entry_value - exit_value)
                 pnl_pct = (pos['entry_price'] - price) / pos['entry_price']
-                
-            # No Financial Math (Balance updates removed)
+            
+            # Simulate Fees (0.04% Taker x 2 for Entry/Exit approx)
+            fee = (entry_value + exit_value) * 0.0004
+            net_pnl = pnl_usdt - fee
+            
+            # UPDATE BALANCE
+            self.balance += net_pnl
             
             # Simple Outcome Reporting
-            outcome = "WIN" if pnl_pct > 0 else "LOSS"
-            if abs(pnl_pct) < 0.001: outcome = "BREAKEVEN"
+            outcome = "WIN" if net_pnl > 0 else "LOSS"
             
             # Update position record if partial
             if is_partial:
                 pos['amount'] -= qty_to_close
-                logger.info(f"🧬 [TRACKER] PARTIAL CLOSE {symbol} | ROI: {pnl_pct*100:.2f}% | Secured Partial.")
+                logger.info(f"🧬 [TRACKER] PARTIAL {symbol}: {pnl_pct*100:.2f}% | PnL: ${net_pnl:.2f} | Bal: ${self.balance:.2f}")
             else:
                 duration = (datetime.now() - pos['entry_time']).total_seconds() / 60
-                logger.info(f"🧬 [TRACKER] CLOSED {symbol} | Result: {outcome} ({pnl_pct*100:.2f}%) | Reason: {reason} | Time: {duration:.1f}m")
+                logger.info(f"🧬 [TRACKER] CLOSED {symbol}: {outcome} (${net_pnl:.2f}) | Bal: ${self.balance:.2f} | Time: {duration:.1f}m")
                 del self.positions[symbol]
             
-            return {'status': 'FILLED', 'avgPrice': price, 'simulated': True}
+            return {'status': 'FILLED', 'avgPrice': price, 'simulated': True, 'pnl': net_pnl}
         else:
             # REAL CLOSE
             side_param = 'SELL' if pos['side'] == 'LONG' else 'BUY'
