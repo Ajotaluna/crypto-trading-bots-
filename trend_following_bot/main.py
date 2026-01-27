@@ -575,9 +575,26 @@ class TrendBot:
                     st = await self.market.get_real_account_status()
                     if st: total_equity = st['equity']
                 
-                logger.info(f"--- STATUS: Equity ${total_equity:.2f} | Open: {len(self.market.positions)} ---")
+                logger.info(f"--- 📊 STATUS: Equity ${total_equity:.2f} | Open: {len(self.market.positions)} ---")
+                
+                # SHOW OPEN POSITIONS
+                if self.market.positions:
+                   for sym, pos in self.market.positions.items():
+                       # Estimate PnL
+                       try:
+                           cp = await self.market.get_current_price(sym)
+                           if pos['side'] == 'LONG':
+                               pnl_pct = (cp - pos['entry_price']) / pos['entry_price'] * 100
+                           else:
+                               pnl_pct = (pos['entry_price'] - cp) / pos['entry_price'] * 100
+                               
+                           duration_m = (datetime.now() - pos['entry_time']).total_seconds() / 60
+                           logger.info(f"   👉 {sym}: {pos['side']} | PnL: {pnl_pct:+.2f}% | Held: {duration_m:.1f}m")
+                       except: pass
+                       
                 await asyncio.sleep(config.MONITOR_INTERVAL)
-            except Exception:
+            except Exception as e:
+                logger.error(f"Reporter Error: {e}")
                 await asyncio.sleep(60)
 
     async def check_watchlist(self): pass
