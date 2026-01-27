@@ -361,6 +361,9 @@ class CalibrationManager:
 
     def save_strategy_map(self, strategy_map):
         """ Save the map with timestamps """
+        if not os.path.exists(self.data_dir):
+            os.makedirs(self.data_dir)
+            
         map_file = os.path.join(self.data_dir, "strategy_licenses.json")
         try:
             import json
