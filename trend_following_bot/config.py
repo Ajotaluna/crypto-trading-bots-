@@ -48,7 +48,7 @@ class Config:
     # Risk Management (The Risk Vault - SNIPER V4)
     RISK_PER_TRADE_PCT = 1.0         # Risk 1% of Equity per trade (Professional Standard)
     TARGET_RISK_REWARD = 3.0         # Aim for 3R (1% Risk -> 3% Profit)
-    MAX_CAPITAL_PER_TRADE_PCT = 2.0 # Cap max position size to 25% of account (Safety Cap)
+    MAX_CAPITAL_PER_TRADE_PCT = 5.0 # Cap max position size to 5% of account (Safety Cap)
     
     # ROI Targets (Fallback/Initial)
     # Price Movement = ROI / Leverage

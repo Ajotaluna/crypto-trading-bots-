@@ -622,8 +622,15 @@ class TrendBot:
                                
                            duration_m = (datetime.now() - pos['entry_time']).total_seconds() / 60
                            
-                           # Format Logging
-                           logger.info(f"   👉 {sym}: {pos['side']} | PnL: {pnl_pct:+.2f}% | Entry: {pos['entry_price']:.4f} | SL: {pos['sl']:.4f} | TP: {pos['tp']:.4f}")
+                           # Calc Percentages
+                           sl_dist = abs(pos['sl'] - pos['entry_price'])
+                           tp_dist = abs(pos['tp'] - pos['entry_price'])
+                           
+                           sl_pct = (sl_dist / pos['entry_price']) * 100
+                           tp_pct = (tp_dist / pos['entry_price']) * 100
+                           
+                           # Format Logging (Percent)
+                           logger.info(f"   👉 {sym}: {pos['side']} | PnL: {pnl_pct:+.2f}% | Entry: {pos['entry_price']:.4f} | SL: {sl_pct:.2f}% | TP: {tp_pct:.2f}%")
                        except: pass
                        
                 await asyncio.sleep(config.MONITOR_INTERVAL)
