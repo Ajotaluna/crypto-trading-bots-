@@ -261,7 +261,32 @@ class TrendBot:
                     
                 symbols = self.active_trading_list 
                 
-                # 3. Global Conditions
+                # 3. Global Conditions & FILTERS
+                
+                # A. TOKYO SESSION FILTER (00:00 - 09:00 UTC)
+                current_hour_utc = datetime.utcnow().hour
+                if 0 <= current_hour_utc < 9:
+                    logger.info("⏸️ TOKYO SESSION PAUSE (00-09 UTC). No new entries.")
+                    await asyncio.sleep(60)
+                    continue
+
+                # B. DAILY PROFIT TARGET (3%)
+                # Get Daily PnL from Tracker
+                daily_pnl = self.tracker.get_daily_pnl()
+                # Estimate Equity (Balance)
+                current_equity = self.start_balance # Baseline
+                if not self.market.is_dry_run:
+                     st = await self.market.get_real_account_status()
+                     if st: current_equity = float(st['equity'])
+                
+                daily_target_usd = current_equity * 0.03
+                
+                if daily_pnl >= daily_target_usd:
+                    logger.info(f"💰 DAILY TARGET HIT (+${daily_pnl:.2f} >= ${daily_target_usd:.2f}). Pausing entries until tomorrow.")
+                    await asyncio.sleep(300)
+                    continue
+                
+                # C. KING'S GUARD
                 btc_trend = await self.market.get_btc_trend()
                 if btc_trend < -0.01:
                     logger.warning(f"🛡️ KING'S GUARD: BTC Crash ({btc_trend*100:.2f}%). Pausing.")
@@ -461,6 +486,11 @@ class TrendBot:
             }
             return
 
+        # CAPACITY CHECK (Strict)
+        if len(self.market.positions) >= config.MAX_OPEN_POSITIONS:
+            logger.warning(f"⚠️ CAPACITY FULL: Cannot execute {symbol}. ({len(self.market.positions)}/{config.MAX_OPEN_POSITIONS})")
+            return
+
         # REAL EXECUTION
         amount = self.market.calculate_position_size(symbol, curr_price, sl, override_risk_pct=risk_pct)
         if amount < 12.0: amount = 12.0 # Min Boost
@@ -469,6 +499,8 @@ class TrendBot:
         
         margin_needed = amount / config.LEVERAGE
         if margin_needed > self.market.balance: return
+        
+        logger.info(f"⚡ EXECUTING {symbol} | SL: {sl:.4f} | TP: {tp:.4f} | Size: ${amount:.0f}")
         
         result = await self.market.open_position(symbol, signal['direction'], amount, sl, tp)
         
@@ -586,10 +618,12 @@ class TrendBot:
                            if pos['side'] == 'LONG':
                                pnl_pct = (cp - pos['entry_price']) / pos['entry_price'] * 100
                            else:
-                               pnl_pct = (pos['entry_price'] - cp) / pos['entry_price'] * 100
+                            pnl_pct = (pos['entry_price'] - cp) / pos['entry_price'] * 100
                                
                            duration_m = (datetime.now() - pos['entry_time']).total_seconds() / 60
-                           logger.info(f"   👉 {sym}: {pos['side']} | PnL: {pnl_pct:+.2f}% | Held: {duration_m:.1f}m")
+                           
+                           # Format Logging
+                           logger.info(f"   👉 {sym}: {pos['side']} | PnL: {pnl_pct:+.2f}% | Entry: {pos['entry_price']:.4f} | SL: {pos['sl']:.4f} | TP: {pos['tp']:.4f}")
                        except: pass
                        
                 await asyncio.sleep(config.MONITOR_INTERVAL)
