@@ -68,7 +68,8 @@ class TrendBot:
 
     async def start(self):
         """Main Entry Point & Orchestrator"""
-        logger.info(">>> STARTING TREND BOT (PRODUCTION) <<<")
+        mode_str = "PRODUCTION (REAL MONEY)" if not self.market.is_dry_run else "DRY RUN (PAPER TRADING)"
+        logger.info(f"\n{'='*50}\n>>> STARTING TREND BOT: {mode_str} <<<\n{'='*50}")
         
         # 1. Initialize Balance
         if not self.market.is_dry_run:
@@ -642,6 +643,17 @@ class TrendBot:
 
 if __name__ == "__main__":
     import os
+    
+    # 0. Load .env manually to avoid extra dependencies
+    env_path = os.path.join(os.path.dirname(__file__), '.env')
+    if os.path.exists(env_path):
+        print(f">>> Loading config from {env_path}")
+        with open(env_path, 'r') as f:
+            for line in f:
+                if '=' in line and not line.startswith('#'):
+                    key, val = line.strip().split('=', 1)
+                    os.environ[key] = val.strip()
+
     dry_run = os.getenv('DRY_RUN', 'true').lower() == 'true'
     api_key = os.getenv('API_KEY')
     api_secret = os.getenv('API_SECRET')
