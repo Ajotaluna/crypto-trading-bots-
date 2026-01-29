@@ -37,7 +37,7 @@ class MarketData:
             total=3,                # Retry 3 times
             backoff_factor=0.5,     # Wait 0.5s, 1s, 2s
             status_forcelist=[429, 500, 502, 503, 504], # Retry on Server Errors
-            allowed_methods=["GET", "POST", "DELETE"]    # Retry on these methods
+            allowed_methods=["GET"]    # ONLY Retry Safe Methods (No POST/DELETE to avoid double-spend)
         )
         self.session.mount('https://', HTTPAdapter(max_retries=retries))
         
