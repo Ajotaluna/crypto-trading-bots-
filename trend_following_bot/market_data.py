@@ -207,37 +207,58 @@ class MarketData:
         return True, qty, "OK"
 
     async def sync_positions(self):
-        """Sync Open Positions from Exchange (Startup Recovery)"""
+        """Sync Open Positions from Exchange (Full Reconciliation)"""
         if self.is_dry_run: return
         
         try:
             positions = await self._signed_request('GET', '/fapi/v2/positionRisk')
             if not positions: return
             
-            count = 0
+            active_symbols = set()
+            count_new = 0
+            
             for p in positions:
                 amt = float(p['positionAmt'])
                 if amt == 0: continue
                 
                 symbol = p['symbol']
+                active_symbols.add(symbol)
+                
                 side = 'LONG' if amt > 0 else 'SHORT'
                 entry_price = float(p['entryPrice'])
                 
-                # RECOVERED POSITION
-                self.positions[symbol] = {
-                    'symbol': symbol,
-                    'side': side,
-                    'amount': abs(amt),
-                    'entry_price': entry_price,
-                    'entry_time': datetime.now(), # Estimate
-                    'sl': 0.0, # Unknown external SL
-                    'tp': 0.0,
-                    'recovered': True
-                }
-                count += 1
+                # UPDATE or ADD
+                if symbol in self.positions:
+                     # Just update criticals, don't overwrite SL/TP/EntryTime if possible?
+                     # Wait, if we overwrote entry_price, pnl calc changes.
+                     # Trust Exchange Entry Price.
+                     self.positions[symbol]['entry_price'] = entry_price
+                     self.positions[symbol]['amount'] = abs(amt)
+                     self.positions[symbol]['side'] = side
+                else:
+                    # RECOVERED (Brand New to Bot)
+                    self.positions[symbol] = {
+                        'symbol': symbol,
+                        'side': side,
+                        'amount': abs(amt),
+                        'entry_price': entry_price,
+                        'entry_time': datetime.now(), # Estimate
+                        'sl': 0.0, # Unknown
+                        'tp': 0.0,
+                        'recovered': True
+                    }
+                    count_new += 1
+
+            # CLEANUP GHOSTS (Closed on Exchange but Open in Bot)
+            # Iterate copy of keys to avoid runtime error
+            for sym in list(self.positions.keys()):
+                if sym not in active_symbols:
+                    logger.info(f"👻 GHOST BUSTED: Removing closed position {sym} from tracker.")
+                    del self.positions[sym]
             
-            if count > 0:
-                logger.info(f"🔄 SYNC: Recovered {count} open positions from Exchange.")
+            if count_new > 0:
+                logger.info(f"🔄 SYNC: Recovered {count_new} position(s).")
+                
         except Exception as e:
             logger.error(f"Sync Failed: {e}")
 
@@ -836,12 +857,16 @@ class MarketData:
             
             qty_str = f"{qty_val}"
             
-            # ReduceOnly order
+            # --- DEFINITIVE CLOSE SEQUENCE (One-Shot) ---
+            # 1. Clean the path (Nuke SL/TP first)
+            await self.cancel_open_orders(symbol)
+            
+            # 2. Execute Market Close
             order = await self._signed_request('POST', '/fapi/v1/order', {
                 'symbol': symbol,
                 'side': side_param,
-                'type': 'MARKET',
-                'quantity': qty_str, # Use Validated String
+                'type': 'MARKET', # Definitive Market Order
+                'quantity': qty_str,
                 'reduceOnly': 'true'
             })
             
@@ -853,8 +878,6 @@ class MarketData:
                 else:
                     logger.info(f"[REAL] CLOSE {symbol} | {reason}")
                     del self.positions[symbol]
-                    # CLEANUP: Cancel any lingering SL/TP
-                    await self.cancel_open_orders(symbol)
                 
                 return order # SUCCESS
             else:

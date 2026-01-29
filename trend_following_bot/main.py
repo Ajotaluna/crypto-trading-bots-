@@ -609,6 +609,9 @@ class TrendBot:
             try:
                 total_equity = self.market.balance # fallback
                 if not self.market.is_dry_run:
+                    # 1. FORCE SYNC (The Fix)
+                    await self.market.sync_positions()
+                    
                     st = await self.market.get_real_account_status()
                     if st: total_equity = st['equity']
                 
