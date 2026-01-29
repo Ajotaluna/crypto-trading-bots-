@@ -79,6 +79,10 @@ class TrendBot:
                  logger.info(f"Initial Equity: ${self.start_balance:.2f}")
         else:
              self.start_balance = self.market.balance
+             
+        # LOGGING CAPITAL & TARGET
+        daily_target = self.start_balance * 0.03
+        logger.info(f"💰 BALANCE: ${self.start_balance:.2f} | 🎯 DAILY TARGET (3%): ${daily_target:.2f}")
 
         # 2. Launch Background Loops
         asyncio.create_task(self.reporting_loop())
