@@ -115,9 +115,15 @@ class TrendBot:
                     await asyncio.sleep(600)
                     continue
                     
-                # B. Calibrate (Tournament)
-                # This updates the strategy map and returns the winners
-                approved_map = self.calibrator.calibrate(candidates)
+                # B. Calibrate (Tournament) - ASYNC PARALLEL
+                # This runs in a separate thread/process to NOT BLOCK the Safety Monitor
+                logger.info("⏳ Starting Parallel Calibration (This may take a while)...")
+                loop = asyncio.get_running_loop()
+                approved_map = await loop.run_in_executor(
+                    self.executor, 
+                    self.calibrator.calibrate, 
+                    candidates
+                )
                 
                 # C. Update Active List
                 new_list = list(approved_map.keys())

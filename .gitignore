@@ -7,6 +7,7 @@ __pycache__/
 .idea/
 .env
 .venv/
+.agent/
 *.pem
 *.csv
 # App Data (Ephemeral/Cache)
