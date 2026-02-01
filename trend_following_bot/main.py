@@ -64,7 +64,9 @@ class TrendBot:
         # SCOREBOARD
         self.tracker = WinRateTracker()
         self.tracker.log_summary()
-        self.executor = concurrent.futures.ProcessPoolExecutor(max_workers=4)
+        self.tracker.log_summary()
+        # ThreadPool used because CalibrationManager holds unpicklable objects (ccxt sockets)
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
     async def start(self):
         """Main Entry Point & Orchestrator"""
