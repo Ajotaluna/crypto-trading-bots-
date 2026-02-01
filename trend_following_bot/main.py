@@ -52,9 +52,13 @@ class TrendBot:
         self.pending_entries = {}
         self.trap_blacklist = {} 
         
-        # PRODUCTION TRADING LIST (Pre-load Majors)
-        self.active_trading_list = list(self.calibrator.vip_majors)
-        if self.active_trading_list:
+        # PRODUCTION TRADING LIST (Hot Start)
+        saved_map = self.calibrator.load_strategy_map()
+        if saved_map:
+            self.active_trading_list = list(saved_map.keys())
+            logger.info(f"🚀 HOT START: Restored {len(self.active_trading_list)} pairs from cache.")
+        else:
+            self.active_trading_list = list(self.calibrator.vip_majors)
             logger.info(f"🚀 BOOTSTRAP: Loaded {len(self.active_trading_list)} Major Pairs immediately.")
         
         # SHADOW MODE STATE MACHINE (Pre-Ban Logic)
@@ -64,7 +68,7 @@ class TrendBot:
         # SCOREBOARD
         self.tracker = WinRateTracker()
         self.tracker.log_summary()
-        self.tracker.log_summary()
+
         # ThreadPool used because CalibrationManager holds unpicklable objects (ccxt sockets)
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
