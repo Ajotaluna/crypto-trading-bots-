@@ -13,7 +13,7 @@ services:
       # Un-comment below to override individual variables if not in .env
       # - API_KEY=your_key_here
       # - API_SECRET=your_secret_here
-      # - DRY_RUN=true
+      - DRY_RUN=false
     volumes:
       # Persist data cache and logs
       - ./data_cache:/app/data_cache
