@@ -359,6 +359,13 @@ class TrendBot:
                     await asyncio.sleep(600) 
                     continue
                 
+                # --- D. KING'S GUARD (Restored) ---
+                btc_trend = await self.market.get_btc_trend()
+                if btc_trend < -0.01:
+                    logger.warning(f"🛡️ KING'S GUARD: BTC Crash ({btc_trend*100:.2f}%). Pausing.")
+                    await asyncio.sleep(60)
+                    continue
+                
                 # --- D. KING'S GUARD ---
                     
                 # 4. WATERFALL EXECUTION
