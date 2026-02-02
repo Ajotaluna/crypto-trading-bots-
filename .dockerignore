@@ -1,0 +1,28 @@
+# Git
+.git
+.gitignore
+
+# Docker
+.dockerignore
+docker-compose.yml
+deploy.sh
+
+# Python / Virtualenv
+__pycache__
+.venv
+*.pyc
+
+# IDEs
+.vscode
+.idea
+
+# App Data / Logs
+_legacy_archive/
+backtest_results/
+data_cache/
+trend_bot.log
+stats.json
+porqueria.txt
+*.pem
+*.csv
+.env

@@ -1,89 +1,81 @@
-# Crypto Trading Bots (Trend + Scalping)
+# Trend Following Bot
 
-## 1. INSTALACIÓN EN AWS (Nueva Instancia)
-Sigue estos pasos si estás configurando un servidor nuevo (Ubuntu).
+Este repositorio contiene un robot de trading automatizado de seguimiento de tendencias para Binance Futures.
 
-### Paso 1: Descargar e Instalar
-Copia y pega este bloque en tu terminal de AWS:
+## Características
+- Estrategia de Trend Following con gestión de riesgos (Titan).
+- Escáner de mercado global.
+- Ejecución segura de órdenes.
+- Contenedorizado con Docker para fácil despliegue.
+
+---
+
+## 🚀 Instalación y Despliegue
+
+### Requisitos Previo
+- Cuenta en Binance Futures.
+- API Key y Secret (con permisos de Futuros).
+- Servidor VPS (Ubuntu recomendado) o máquina local con Docker.
+
+### 1. Instalación Rápida (AWS / Ubuntu)
+Ejecuta el script de despliegue automático:
 ```bash
 wget https://raw.githubusercontent.com/Ajotaluna/crypto-trading-bots-/main/deploy.sh
 chmod +x deploy.sh
 ./deploy.sh
 ```
 
-### Paso 2: Verificar Conexión con Binance
-Comprueba que tu servidor NO esté bloqueado por región (USA = Bloqueado):
-```bash
-# Reemplaza con tus claves reales
-sudo docker run --rm \
-  -e API_KEY='TU_API_KEY' \
-  -e API_SECRET='TU_API_SECRET' \
-  crypto-bot python check_keys.py
-```
-*Si dice "✅ Private API OK!", puedes continuar.*
+### 2. Configuración y Ejecución
 
----
+#### Opción Recomendada: Docker Compose
+1. Crea un archivo `.env` en la raíz del proyecto:
+   ```bash
+   API_KEY=tu_api_key_aqui
+   API_SECRET=tu_api_secret_aqui
+   # Opcional: DRY_RUN=true con dinero ficticio (por defecto es false/real si no se pone)
+   ```
 
-## 2. EJECUTAR LOS BOTS
+2. Arranca el bot:
+   ```bash
+   sudo docker-compose up -d
+   ```
 
-### Opción A: MODO PRUEBA (Recomendado al inicio)
-- **Dinero Ficticio (Dry Run)**: No gasta saldo real.
-- **Modo Relajado (Loose Mode)**: Entra más rápido para que veas que funciona.
+3. Ver logs:
+   ```bash
+   sudo docker-compose logs -f
+   ```
 
-**Scalping Bot (Rápido):**
-```bash
-sudo docker run -d --restart=always --name scalp-bot \
-  -e BOT_TYPE='scalp' \
-  -e DRY_RUN='true' \
-  -e LOOSE_MODE='true' \
-  -e API_KEY='TU_API_KEY' \
-  -e API_SECRET='TU_API_SECRET' \
-  crypto-bot python -u scalping_bot_v2/main.py
-```
-
-**Trend Bot (Tendencias):**
+#### Opción Manual: Docker Run
 ```bash
 sudo docker run -d --restart=always --name trend-bot \
-  -e BOT_TYPE='trend' \
-  -e DRY_RUN='true' \
-  -e LOOSE_MODE='true' \
   -e API_KEY='TU_API_KEY' \
   -e API_SECRET='TU_API_SECRET' \
-  crypto-bot python -u trend_following_bot/main.py
-```
-
-### Opción B: MODO REAL (Dinero Real)
-- Solo quita `DRY_RUN` y `LOOSE_MODE`.
-- **IMPORTANTE:** Configura "Margen Aislado" (Isolated) en Binance antes de empezar.
-
-```bash
-# Ejemplo Scalping Real
-sudo docker run -d --restart=always --name scalp-bot \
-  -e BOT_TYPE='scalp' \
-  -e API_KEY='TU_API_KEY' \
-  -e API_SECRET='TU_API_SECRET' \
-  crypto-bot python -u scalping_bot_v2/main.py
+  -v $(pwd)/data_cache:/app/data_cache \
+  crypto-bot
 ```
 
 ---
 
-## 3. VER REPORTE Y LOGS
-Los bots ahora son silenciosos y solo reportan cada 5 minutos o cuando operan.
+## 🛠 Comandos de Mantenimiento
 
+**Detener el bot:**
 ```bash
-# Ver Scalping Bot
-sudo docker logs -f scalp-bot
-
-# Ver Trend Bot
-sudo docker logs -f trend-bot
+sudo docker-compose down
+# O si usaste docker run:
+# sudo docker stop trend-bot
 ```
 
-### Comandos Útiles
-- **Detener bot:** `sudo docker stop scalp-bot`
-- **Borrar bot:** `sudo docker rm -f scalp-bot`
-- **Actualizar código:**
-  ```bash
-  cd crypto-trading-bots-
-  git pull
-  sudo docker build -t crypto-bot .
-  ```
+**Actualizar a la última versión:**
+```bash
+git pull
+sudo docker-compose build
+sudo docker-compose up -d
+```
+
+---
+
+## 📂 Estructura del Proyecto
+- `trend_following_bot/`: Código fuente principal.
+- `data_cache/`: Datos persistentes (calibración, estado).
+- `_legacy_archive/`: Código antiguo/archivado (no utilizado).
+- `Dockerfile` y `docker-compose.yml`: Configuración de contenedorización.

@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  trend-bot:
+    build: .
+    container_name: trend-following-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - BOT_TYPE=trend
+      # Un-comment below to override individual variables if not in .env
+      # - API_KEY=your_key_here
+      # - API_SECRET=your_secret_here
+      # - DRY_RUN=true
+    volumes:
+      # Persist data cache and logs
+      - ./data_cache:/app/data_cache
+      - ./trend_bot.log:/app/trend_bot.log
+    # Network mode: host might be easier for some setups, but bridge (default) is fine.
+    # For low latency close to exchange, standard networking is usually fine on AWS.
