@@ -28,12 +28,15 @@ from blacklist_manager import BlacklistManager
 from calibration import CalibrationManager # NEW: Production Calibration Engine
 
 # Setup logging
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("trend_bot.log")
+        logging.FileHandler("logs/trend_bot.log")
     ]
 )
 logger = logging.getLogger("TrendBot")

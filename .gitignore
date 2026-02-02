@@ -16,6 +16,7 @@ backtest_data/
 data_cache/
 
 # Logs
+logs/
 trend_bot.log
 backtest_results/
 fortress_bot/

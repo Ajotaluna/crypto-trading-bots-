@@ -17,6 +17,6 @@ services:
     volumes:
       # Persist data cache and logs
       - ./data_cache:/app/data_cache
-      - ./trend_bot.log:/app/trend_bot.log
+      - ./logs:/app/logs
     # Network mode: host might be easier for some setups, but bridge (default) is fine.
     # For low latency close to exchange, standard networking is usually fine on AWS.
