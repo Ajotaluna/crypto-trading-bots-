@@ -26,7 +26,11 @@ class CalibrationManager:
         self.exchange = ccxt.binance()
         self.detector = PatternDetector()
         self.use_cache = use_cache
-        self.data_dir = os.path.join(os.path.dirname(__file__), "calibration_data")
+        self.data_dir = os.path.join(os.getcwd(), "data_cache")
+        if not os.path.exists(self.data_dir):
+            try:
+                os.makedirs(self.data_dir)
+            except: pass
         self.config_file = os.path.join(os.path.dirname(__file__), "market_config.json")
         
         self.vip_majors = []

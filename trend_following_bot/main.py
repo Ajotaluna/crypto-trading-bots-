@@ -288,6 +288,18 @@ class TrendBot:
                     
                 symbols = self.active_trading_list 
                 
+                # STRICT PRIORITY SORTING: Scalper (1) > Grinder (2) > Major (3)
+                # This ensures we fill capacity with high-potential trades first.
+                priority_map = {'SCALPER': 1, 'GRINDER': 2, 'MAJOR_REVERSION': 3}
+                
+                # Helper to get priority (Default to 3 if unknown)
+                def get_prio(sym):
+                    strat = self.calibration.approved_pairs.get(sym, 'MAJOR_REVERSION')
+                    return priority_map.get(strat, 3)
+                
+                # Sort in place (Lower number = Higher Priority)
+                symbols.sort(key=get_prio)
+                
                 # 3. Global Conditions & FILTERS
                 
                 # 3. Global Conditions & FILTERS
