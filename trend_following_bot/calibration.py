@@ -37,6 +37,7 @@ class CalibrationManager:
         self.vip_grinders = []
         self.vip_scalpers = []
         self.calib_settings = {} # Default Init
+        self.approved_pairs = {} # STARTUP FIX: Public Attribute
         
         self._load_market_config()
         
@@ -190,7 +191,9 @@ class CalibrationManager:
         min_pnl = float(self.calib_settings.get('min_pnl_pct', 10.0))
         min_wr = float(self.calib_settings.get('min_win_rate', 40.0))
         
-        approved_pairs = {}
+        # USE INSTANCE VARIABLE (Public for Main)
+        self.approved_pairs = {} 
+        approved_pairs = self.approved_pairs # Local alias for compatibility below
         
         # 2a. VIP MAJORS (Always Approved, Instant)
         # Strategy: MAJOR_REVERSION
