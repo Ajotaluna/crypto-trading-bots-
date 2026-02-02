@@ -294,7 +294,7 @@ class TrendBot:
                 
                 # Helper to get priority (Default to 3 if unknown)
                 def get_prio(sym):
-                    strat = self.calibration.approved_pairs.get(sym, 'MAJOR_REVERSION')
+                    strat = self.calibrator.approved_pairs.get(sym, 'MAJOR_REVERSION')
                     return priority_map.get(strat, 3)
                 
                 # Sort in place (Lower number = Higher Priority)
