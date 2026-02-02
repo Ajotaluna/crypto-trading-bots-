@@ -302,8 +302,15 @@ class TrendBot:
                 
                 # 3. Global Conditions & FILTERS
                 
-                # 3. Global Conditions & FILTERS
-                
+                # --- PRE-CALCULATION: EQUITY ---
+                current_equity = self.start_balance # Default (Safe Fallback)
+                if not self.market.is_dry_run:
+                     st = await self.market.get_real_account_status()
+                     if st: current_equity = float(st['equity'])
+                else:
+                     # Dry Run: Use Market Balance (Simulation)
+                     current_equity = self.market.balance
+
                 # --- A. NEW DAY RECALCULATION ---
                 current_date_str = datetime.utcnow().strftime('%Y-%m-%d')
                 if current_date_str != self.current_day_str:
