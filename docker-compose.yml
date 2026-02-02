@@ -2,6 +2,7 @@ version: '3.8'
 
 services:
   trend-bot:
+    image: trend-bot-image
     build: .
     container_name: trend-following-bot
     restart: unless-stopped
