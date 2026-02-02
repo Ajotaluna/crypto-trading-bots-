@@ -89,6 +89,8 @@ class TrendBot:
                  logger.info(f"Initial Equity: ${self.start_balance:.2f}")
         else:
              self.start_balance = self.market.balance
+        
+        self.current_day_str = datetime.utcnow().strftime('%Y-%m-%d')
              
         # LOGGING CAPITAL & TARGET
         daily_target = self.start_balance * 0.03
@@ -267,6 +269,10 @@ class TrendBot:
         """WATERFALL FINDER: Prioritized Continuous Scanning"""
         logger.info("🌊 Started Waterfall Scanner (Continuous Flow)...")
         
+        # STARTUP COOLDOWN: Give indicators time to stabilize
+        logger.info("🧊 STARTUP COOLDOWN: Waiting 60s for market data stabilization...")
+        await asyncio.sleep(60)
+        
         while self.running:
             try:
                 # 1. Capacity Check
@@ -284,35 +290,57 @@ class TrendBot:
                 
                 # 3. Global Conditions & FILTERS
                 
-                # A. TOKYO SESSION FILTER (00:00 - 09:00 UTC)
-                current_hour_utc = datetime.utcnow().hour
-                if 0 <= current_hour_utc < 9:
-                    logger.info("⏸️ TOKYO SESSION PAUSE (00-09 UTC). No new entries.")
-                    await asyncio.sleep(60)
+                # 3. Global Conditions & FILTERS
+                
+                # --- A. NEW DAY RECALCULATION ---
+                current_date_str = datetime.utcnow().strftime('%Y-%m-%d')
+                if current_date_str != self.current_day_str:
+                     logger.info(f"📅 NEW DAY (UTC): Recalculating Daily Goals...")
+                     self.current_day_str = current_date_str
+                     self.start_balance = current_equity # Reset Baseline for Compounding
+                     # Also ensure tracker resets
+                     self.tracker.reset_daily_pnl_if_new_day()
+
+                # --- B. DAILY TARGET CHECK (3% of SESSION/DAY START) ---
+                target_equity = self.start_balance * 1.03
+                
+                if current_equity >= target_equity:
+                    profit = current_equity - self.start_balance
+                    logger.info(f"💰 💰 💰 DAILY TARGET HIT! Equity ${current_equity:.2f} >= ${target_equity:.2f} (+${profit:.2f})")
+                    logger.info("🛑 CLOSING ALL POSITIONS & SLEEPING UNTIL AFTER TOKYO.")
+                    
+                    # 1. Close All Trades
+                    await self.market.emergency_close_all(reason="DAILY TARGET SECURED")
+                    
+                    # 2. Calculate Sleep Time until Next 09:00 UTC
+                    utc_now = datetime.utcnow()
+                    
+                    # Target: Today 09:00 or Tomorrow 09:00?
+                    # If we hit it BEFORE 09:00, we sleep until Today 09:00.
+                    # If we hit it AFTER 09:00, we sleep until Tomorrow 09:00.
+                    
+                    target_time = utc_now.replace(hour=9, minute=0, second=0, microsecond=0)
+                    if utc_now >= target_time:
+                        target_time += timedelta(days=1) # Tomorrow
+                        
+                    sleep_seconds = (target_time - utc_now).total_seconds()
+                    hours = sleep_seconds / 3600
+                    
+                    logger.info(f"😴 GOODNIGHT: Sleeping {hours:.1f} hours until {target_time} UTC...")
+                    await asyncio.sleep(sleep_seconds) 
+                    
+                    # Upon waking, loop continues. New Day check will eventually trigger if we crossed midnight.
                     continue
 
-                # B. DAILY PROFIT TARGET (3%)
-                # Get Daily PnL from Tracker
-                daily_pnl = self.tracker.get_daily_pnl()
-                # Estimate Equity (Balance)
-                current_equity = self.start_balance # Baseline
-                if not self.market.is_dry_run:
-                     st = await self.market.get_real_account_status()
-                     if st: current_equity = float(st['equity'])
-                
-                daily_target_usd = current_equity * 0.03
-                
-                if daily_pnl >= daily_target_usd:
-                    logger.info(f"💰 DAILY TARGET HIT (+${daily_pnl:.2f} >= ${daily_target_usd:.2f}). Pausing entries until tomorrow.")
-                    await asyncio.sleep(300)
+                # --- C. TOKYO SESSION FILTER (00:00 - 09:00 UTC) ---
+                # Only strictly pause if we haven't hit target yet (implied by execution flow)
+                current_hour_utc = datetime.utcnow().hour
+                if 0 <= current_hour_utc < 9:
+                    logger.info("⏸️ TOKYO SESSION (00-09 UTC): Pausing Entries (Fluidez Perfecta).")
+                    await asyncio.sleep(600) 
                     continue
                 
-                # C. KING'S GUARD
-                btc_trend = await self.market.get_btc_trend()
-                if btc_trend < -0.01:
-                    logger.warning(f"🛡️ KING'S GUARD: BTC Crash ({btc_trend*100:.2f}%). Pausing.")
-                    await asyncio.sleep(60)
-                    continue
+                # --- D. KING'S GUARD ---
                     
                 # 4. WATERFALL EXECUTION
                 for symbol in symbols:

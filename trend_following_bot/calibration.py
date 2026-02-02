@@ -265,7 +265,8 @@ class CalibrationManager:
                         'stats': best_result # Optional stats storage
                     }
                 else:
-                    print(f"   [{symbol}] REJECTED (No profitable strategy)")
+                    reason = f"Best PnL: {best_pnl:.2f}%" if best_pnl > -999 else "No Valid Trades"
+                    print(f"   [{symbol}] REJECTED ({reason}) vs Target {min_pnl}%")
 
             # Save updated map
             self.save_strategy_map(license_map)
