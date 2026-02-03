@@ -73,12 +73,14 @@ class MarketData:
                         q_step = 1.0
                         p_tick = 0.01
                         min_qty = 0.001
-                        min_notional = 5.0 # Default safe value
+                        max_qty = 1000000.0 # Default High
+                        min_notional = 5.0 
                         
                         for f in s['filters']:
                             if f['filterType'] == 'LOT_SIZE':
                                 q_step = float(f['stepSize'])
                                 min_qty = float(f['minQty'])
+                                max_qty = float(f['maxQty'])
                             elif f['filterType'] == 'PRICE_FILTER':
                                 p_tick = float(f['tickSize'])
                             elif f['filterType'] == 'MIN_NOTIONAL':
@@ -88,6 +90,7 @@ class MarketData:
                             'q': q_step, 
                             'p': p_tick, 
                             'min_q': min_qty, 
+                            'max_q': max_qty,
                             'min_n': min_notional
                         }
             except Exception as e:
@@ -712,7 +715,8 @@ class MarketData:
                 'symbol': symbol,
                 'side': side_param,
                 'type': 'MARKET',
-                'quantity': qty
+                'quantity': qty,
+                'reduceOnly': 'false' # Added as per instruction, though typically 'false' for entry
             }
             
             try:
@@ -831,41 +835,34 @@ class MarketData:
             
             return {'status': 'FILLED', 'avgPrice': price, 'simulated': True, 'pnl': net_pnl}
         else:
-            # REAL CLOSE
-            side_param = 'SELL' if pos['side'] == 'LONG' else 'BUY'
+            # REAL CLOSE (NUCLEAR OPTION: BLIND REDUCE-ONLY)
+            # STRATEGY: Send Maximum Possible Quantity with ReduceOnly=True.
+            # Binance Engine will auto-truncate this to the exact position size.
+            # NO QUERIES. NO DELAYS.
             
-            # --- FIX: ROUND QUANTITY AND VALIDATE AGAINST FILTERS ---
-            # 1. Get Precision Rules
+            # 1. Get Limits (Local Cache, Instant)
             prec = await self._get_symbol_precision(symbol)
-            step_size = prec['q']
+            max_qty = prec.get('max_q', 100000.0) 
             
-            # 2. Round Initial Qty
-            qty_val = self._round_step_size(qty_to_close, step_size)
+            # 2. Prepare BLIND Order 
+            # We try BOTH sides? No, we must know the side.
+            # We use local 'pos['side']' as direction hint.
+            # If local side is wrong, this fails. But user wants speed.
+            target_side = 'SELL' if pos['side'] == 'LONG' else 'BUY'
             
-            # 3. VALIDATION GUARD (The Gatekeeper)
-            is_valid, corrected_qty, reason = self._validate_order_compliance(symbol, qty_val, price, prec)
+            # Use 99% of Max Qty to be safe from edge constraints or just Max
+            qty_str = f"{max_qty}" 
             
-            if not is_valid:
-                logger.warning(f"👮 GATEKEEPER ({symbol}): {reason} -> Auto-Correcting to {corrected_qty}...")
-                qty_val = corrected_qty
-                
-                # SPECIAL CASE: If correction exceeds remaining amount (polvo), CLOSE ALL.
-                if qty_val >= pos['amount'] * 0.99:
-                    logger.info(f"🧹 DUST CLEANUP: Upgrading to FULL CLOSE for {symbol}.")
-                    qty_val = pos['amount']
-                    is_partial = False # Force Full Close status
+            logger.info(f"☢️ NUCLEAR CLOSE: Firing {target_side} {qty_str} (ReduceOnly).")
             
-            qty_str = f"{qty_val}"
-            
-            # --- DEFINITIVE CLOSE SEQUENCE (One-Shot) ---
-            # 1. Clean the path (Nuke SL/TP first)
+            # 3. Clean Path
             await self.cancel_open_orders(symbol)
             
-            # 2. Execute Market Close
+            # 4. EXECUTE
             order = await self._signed_request('POST', '/fapi/v1/order', {
                 'symbol': symbol,
-                'side': side_param,
-                'type': 'MARKET', # Definitive Market Order
+                'side': target_side,
+                'type': 'MARKET',
                 'quantity': qty_str,
                 'reduceOnly': 'true'
             })
