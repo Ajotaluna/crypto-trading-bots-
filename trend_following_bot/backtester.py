@@ -3,7 +3,10 @@ import pandas as pd
 import logging
 from datetime import datetime, timedelta
 from trend_following_bot.market_data import MarketData
-from trend_following_bot.patterns import PatternDetector, TechnicalAnalysis
+from trend_following_bot.market_data import MarketData
+from trend_following_bot.patterns_v2 import PatternDetector
+from trend_following_bot.technical_analysis import TechnicalAnalysis
+from trend_following_bot.config import config
 from trend_following_bot.config import config
 
 # Setup Logging

@@ -24,3 +24,5 @@ _legacy_archive/
 # Temp
 porqueria.txt
 stats.json
+strategy_lab/
+trend_following_bot/strategy_lab/

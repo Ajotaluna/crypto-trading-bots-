@@ -835,49 +835,57 @@ class MarketData:
             
             return {'status': 'FILLED', 'avgPrice': price, 'simulated': True, 'pnl': net_pnl}
         else:
-            # REAL CLOSE (NUCLEAR OPTION: BLIND REDUCE-ONLY)
-            # STRATEGY: Send Maximum Possible Quantity with ReduceOnly=True.
-            # Binance Engine will auto-truncate this to the exact position size.
-            # NO QUERIES. NO DELAYS.
+            # REAL CLOSE (NUCLEAR OPTION V3: SERVER TRUTH)
+            # "Blind Max" failed (API Limits). "Local Tracking" fails (Drift).
+            # Solution: ONE Query (Get Truth) -> ONE Order (Execute Truth).
             
-            # 1. Get Limits (Local Cache, Instant)
-            prec = await self._get_symbol_precision(symbol)
-            max_qty = prec.get('max_q', 100000.0) 
-            
-            # 2. Prepare BLIND Order 
-            # We try BOTH sides? No, we must know the side.
-            # We use local 'pos['side']' as direction hint.
-            # If local side is wrong, this fails. But user wants speed.
-            target_side = 'SELL' if pos['side'] == 'LONG' else 'BUY'
-            
-            # Use 99% of Max Qty to be safe from edge constraints or just Max
-            qty_str = f"{max_qty}" 
-            
-            logger.info(f"☢️ NUCLEAR CLOSE: Firing {target_side} {qty_str} (ReduceOnly).")
-            
-            # 3. Clean Path
-            await self.cancel_open_orders(symbol)
-            
-            # 4. EXECUTE
-            order = await self._signed_request('POST', '/fapi/v1/order', {
-                'symbol': symbol,
-                'side': target_side,
-                'type': 'MARKET',
-                'quantity': qty_str,
-                'reduceOnly': 'true'
-            })
-            
-            if order:
-                await self.initialize_balance()
-                if is_partial:
-                     pos['amount'] -= qty_to_close
-                     logger.info(f"[REAL] PARTIAL CLOSE {symbol} | {reason}")
-                else:
-                    logger.info(f"[REAL] CLOSE {symbol} | {reason}")
-                    del self.positions[symbol]
+            try:
+                # 1. Fetch Exact Position (The only way to avoid API rejections)
+                risk_data = await self._signed_request('GET', '/fapi/v2/positionRisk', {'symbol': symbol})
+                server_amt = 0.0
+                if risk_data and isinstance(risk_data, list):
+                    pos_data = risk_data[0] # One-Way Mode
+                    server_amt = float(pos_data['positionAmt'])
                 
-                return order # SUCCESS
-            else:
-                logger.error(f"❌ [CRITICAL] CLOSE FAILED for {symbol} ({reason}). API Rejected Order. Position Stuck open.")
+                if server_amt == 0:
+                    logger.info(f"☢️ NUCLEAR: {symbol} Server says CLOSED (0). Syncing local.")
+                    if symbol in self.positions: del self.positions[symbol]
+                    return {'status': 'CLOSED'}
+
+                # 2. Fire Exact Amount
+                # If we send exact amount + reduceOnly, it works perfectly.
+                side_curr = 'SELL' if server_amt > 0 else 'BUY'
+                qty_abs = abs(server_amt)
+                
+                logger.info(f"☢️ NUCLEAR: Closing {qty_abs} {symbol} (Server Validated).")
+                
+                # Cleanup Limit Orders first
+                await self.cancel_open_orders(symbol)
+                
+                order = await self._signed_request('POST', '/fapi/v1/order', {
+                    'symbol': symbol,
+                    'side': side_curr,
+                    'type': 'MARKET',
+                    'quantity': f"{qty_abs}",
+                    'reduceOnly': 'true'
+                })
+                
+                if order:
+                    await self.initialize_balance()
+                    if is_partial:
+                        pos['amount'] -= qty_to_close
+                    else:
+                        if symbol in self.positions: del self.positions[symbol]
+                    logger.info(f"✅ NUCLEAR CLOSE SUCCEEDED: {symbol}")
+                    return order
+                else:
+                    logger.error(f"❌ CLOSE REJECTED for {symbol}.")
+                    return None
+                    
+            except Exception as e:
+                logger.error(f"❌ NUCLEAR EXCEPTION: {e}")
+                return None
+            
+
                 return None
 
