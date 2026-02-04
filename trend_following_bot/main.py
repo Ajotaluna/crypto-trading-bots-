@@ -69,6 +69,16 @@ class TrendBot:
         self.pair_states = {} 
         self.shadow_positions = {} 
         
+        # PERSISTENCE TRACKING (Core vs Ephemeral)
+        # Pairs in this set are "Protected" from strict pruning (Volume/Core tiers)
+        self.persistent_pairs = set()
+        if saved_map:
+             self.persistent_pairs.update(saved_map.keys())
+        
+        # GRACE PERIOD TRACKER (Anti-Flicker)
+        # {symbol: timestamp_when_trend_lost}
+        self.trend_grace_timers = {}
+
         # SCOREBOARD
         self.tracker = WinRateTracker()
         self.tracker.log_summary()
@@ -153,6 +163,11 @@ class TrendBot:
                         )
                         # Sync List
                         self.active_trading_list = list(approved_map.keys())
+                        
+                        # UPDATE PERSISTENCE (Core Pairs)
+                        self.persistent_pairs = set(approved_map.keys())
+                        logger.info(f"🔒 PERSISTENCE: {len(self.persistent_pairs)} Core Pairs protected from strict pruning.")
+                        
                         logger.info(f"✅ Active Trading List Updated ({len(self.active_trading_list)} pairs)")
                         
                     last_maintenance = now
@@ -328,12 +343,19 @@ class TrendBot:
                 # If calibration is running, this picks up new winners immediately.
                 if self.calibrator and self.calibrator.approved_pairs:
                     live_winners = list(self.calibrator.approved_pairs.keys())
-                    # Only update if we found new ones (avoid potential race conditions shrinking list)
-                    if len(live_winners) > len(self.active_trading_list):
-                        # Filter out duplicates while preserving order? 
-                        # Calibrator dict is insertion ordered (by trend priority now).
-                        self.active_trading_list = live_winners
-                        # logger.info(f"⚡ LIVE SYNC: Active list updated to {len(self.active_trading_list)} pairs.")
+                    
+                    # INTELLIGENT SYNC (Append Only)
+                    # Prevents overwriting pruning work. Only adds TRULY NEW discoveries.
+                    current_set = set(self.active_trading_list)
+                    new_items = [x for x in live_winners if x not in current_set]
+                    
+                    if new_items:
+                        # Only add if they are not in our "Kill List" (Grace Timer Expiry)
+                        # We use 'trend_grace_timers' keys? No, keys exist during grace.
+                        # We need to trust that if we removed it from calibrator, it won't be here.
+                        # But if it is here, it's new.
+                        self.active_trading_list.extend(new_items)
+                        # logger.info(f"⚡ LIVE SYNC: Added {len(new_items)} new pairs.")
                     
                 # 2. TREND AUDIT & PRIORITY SORT (Dynamic)
                 # User Requirement: "Priority to Trend", "Remove if Trend Ends"
@@ -347,15 +369,44 @@ class TrendBot:
                     
                     if trend_score < 20: 
                         # PRUNE: Trend Ended (Strict Mode)
-                        # User: "Once trend ends, must be removed."
-                        logger.warning(f"📉 TREND DIED: {symbol} (ADX {trend_score:.1f} < 20). Removing from Active List.")
-                        if symbol in self.active_trading_list:
-                             self.active_trading_list.remove(symbol)
+                        # EXCEPTION: Do not strictly prune "Core Pairs" (Volume/Maintenance List)
+                        # User: "No toda la lista en la que se incluyen los 50 pares..."
                         
-                        # Also ban from calibrator to keep file sync?
-                        # self.calibrator.ban_candidate(symbol) # Maybe too aggressive?
-                        # Just removing from memory allows "Reactive Discovery" to find it again later if it bounces back.
-                        continue 
+                        if symbol in self.persistent_pairs:
+                            continue
+                            
+                        # GRACE PERIOD LOGIC (2 HOURS)
+                        # "Creemos ciclos... solo se elimina 2 horas despues"
+                        
+                        grace_start = self.trend_grace_timers.get(symbol)
+                        
+                        if not grace_start:
+                             # Start Timer (First Failure)
+                             self.trend_grace_timers[symbol] = time.time()
+                             logger.warning(f"📉 TREND LOST: {symbol} (ADX {trend_score:.1f}). Entering 2H Grace Period (Deprioritized).")
+                             # Skip adding to 'scored_symbols' -> Deprioritized immediately
+                             continue
+                             
+                        else:
+                             # Timer Running
+                             elapsed_hours = (time.time() - grace_start) / 3600
+                             if elapsed_hours >= 2.0:
+                                  # EXPIRED -> KILL
+                                  logger.warning(f"💀 GRACE EXPIRED: {symbol} failed to recover in 2h. REMOVING permanently.")
+                                  if symbol in self.active_trading_list:
+                                       self.active_trading_list.remove(symbol)
+                                  if self.calibrator and symbol in self.calibrator.approved_pairs:
+                                       del self.calibrator.approved_pairs[symbol] # Ensure Sync doesn't revive it
+                                  del self.trend_grace_timers[symbol]
+                                  continue
+                             else:
+                                  # Waiting... (Silent Deprioritization)
+                                  continue
+                    
+                    # Trend OK (>= 20)
+                    if symbol in self.trend_grace_timers:
+                        logger.info(f"♻️ TREND RECOVERED: {symbol} (ADX {trend_score:.1f}) is back!")
+                        del self.trend_grace_timers[symbol] 
                         
                     scored_symbols.append((symbol, trend_score))
                 
