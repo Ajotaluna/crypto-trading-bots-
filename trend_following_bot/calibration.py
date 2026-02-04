@@ -8,14 +8,13 @@ from technical_analysis import TechnicalAnalysis
 
 class CalibrationManager:
     """
-    DYNAMIC MARKET CALIBRATOR
-    Function: Auditions candidate pairs on startup to see if they fit our strategies.
-    Result: Returns a list of 'Approved' pairs + their assigned strategy.
+    DYNAMIC MARKET CALIBRATOR (TOURNAMENT EDITION)
+    Function: Auditions candidate pairs against 7 Strategy Variants to find the optimal fit.
+    Result: Returns a list of 'Approved' pairs + their assigned strategy (and subgroup).
     
     Criteria:
-    1. Win Rate > 50%
-    OR
-    2. Net Profit > 10% (in the test window)
+    1. Win Rate >= 40% (Safety)
+    2. Net Profit >= 10% (Performance)
     """
     
     def __init__(self, use_cache=False):
@@ -36,8 +35,14 @@ class CalibrationManager:
         self.vip_majors = []
         self.vip_grinders = []
         self.vip_scalpers = []
+        
+        # Subgroup Memory
+        self.major_subgroups = {}
+        self.grinder_subgroups = {}
+        self.scalper_subgroups = {}
+        
         self.calib_settings = {} # Default Init
-        self.approved_pairs = {} # STARTUP FIX: Public Attribute
+        self.approved_pairs = {} 
         
         self._load_market_config()
         
@@ -54,6 +59,11 @@ class CalibrationManager:
                     self.vip_majors = data.get('vip_majors', [])
                     self.vip_grinders = data.get('vip_grinders', [])
                     self.vip_scalpers = data.get('vip_scalpers', [])
+                    
+                    self.major_subgroups = data.get('major_subgroups', {})
+                    self.grinder_subgroups = data.get('grinder_subgroups', {})
+                    self.scalper_subgroups = data.get('scalper_subgroups', {})
+                    
                     self.calib_settings = data.get('calibration_settings', {})
                 print(f">>> Loaded Market Config: {len(self.vip_majors)} Majors, {len(self.vip_grinders)} Grinders, {len(self.vip_scalpers)} Scalpers.")
             except Exception as e:
@@ -62,28 +72,20 @@ class CalibrationManager:
             print("Warning: market_config.json not found. Using empty VIP lists.")
 
     def _save_market_config(self):
-        """ Writes current VIP lists to JSON """
+        """ Writes current VIP lists to JSON (In-Memory Source of Truth) """
         try:
             import json
             data = {
                 "vip_majors": self.vip_majors,
                 "vip_grinders": self.vip_grinders,
                 "vip_scalpers": self.vip_scalpers,
-                # Preserve subgroups if they exist, or use internal defaults if missing?
-                # Best effort: Load existing first to preserve other keys like subgroups
-                "major_subgroups": {}, 
-                "grinder_subgroups": {},
-                "scalper_subgroups": {},
+                
+                "major_subgroups": self.major_subgroups,
+                "grinder_subgroups": self.grinder_subgroups,
+                "scalper_subgroups": self.scalper_subgroups,
+                
                 "calibration_settings": self.calib_settings
             }
-            
-            # Try to preserve existing subgroups by reading first
-            if os.path.exists(self.config_file):
-                 with open(self.config_file, 'r') as f:
-                    existing = json.load(f)
-                    data['major_subgroups'] = existing.get('major_subgroups', {})
-                    data['grinder_subgroups'] = existing.get('grinder_subgroups', {})
-                    data['scalper_subgroups'] = existing.get('scalper_subgroups', {})
 
             with open(self.config_file, 'w') as f:
                 json.dump(data, f, indent=4)
@@ -92,18 +94,8 @@ class CalibrationManager:
             print(f"Error saving market_config.json: {e}")
 
     def promote_candidate(self, symbol, strategy):
-        """ Promotes a new winner to the VIP list """
-        self._load_market_config() # Refresh first
-        
-        if strategy == 'MAJOR_REVERSION':
-            if symbol not in self.vip_majors: self.vip_majors.append(symbol)
-        elif strategy == 'GRINDER':
-             if symbol not in self.vip_grinders: self.vip_grinders.append(symbol)
-        elif strategy == 'SCALPER':
-             if symbol not in self.vip_scalpers: self.vip_scalpers.append(symbol)
-             
-        self._save_market_config()
-        print(f"🌟 PROMOTED {symbol} to VIP {strategy} List.")
+        """ Legacy Helper - Not used in Tournament Mode but kept for compatibility """
+        pass
 
     def ban_candidate(self, symbol):
         """ Removes a toxic pair from ALL VIP lists """
@@ -159,7 +151,6 @@ class CalibrationManager:
                 
                 if last_ts >= end_time: break
                 if len(all_1m) > limit * 16: break # Safety cap
-                if len(all_1m) > limit * 16: break # Safety cap
                 time.sleep(0.5) # Rate limit protection (Safe Mode)
 
             df_1m = pd.DataFrame(all_1m, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
@@ -175,113 +166,165 @@ class CalibrationManager:
             print(f"[Calibration] Error fetching {symbol}: {e}")
             return None, None
 
-    # ... (run_simulation remains same) ...
+    def load_strategy_map(self):
+        """ Load the persistent strategy map from disk """
+        map_file = os.path.join(self.data_dir, "strategy_licenses.json")
+        if os.path.exists(map_file):
+            try:
+                import json
+                with open(map_file, 'r') as f:
+                    return json.load(f)
+            except: 
+                return {}
+        return {}
 
-    def calibrate(self, candidate_list):
+    def save_strategy_map(self, strategy_map):
+        """ Save the map with timestamps """
+        if not os.path.exists(self.data_dir):
+            os.makedirs(self.data_dir)
+            
+        map_file = os.path.join(self.data_dir, "strategy_licenses.json")
+        try:
+            import json
+            with open(map_file, 'w') as f:
+                json.dump(strategy_map, f, indent=4)
+        except Exception as e:
+            print(f"Failed to save strategy map: {e}")
+
+    def calibrate(self, candidate_list, reset_lists=True):
         """
-        Main Routine: The Strategy Tournament (Optimized with Licenses).
+        Main Routine: The Strategy Tournament (TRUE CALIBRATION).
+        Tests 7 Variants per Pair. Assigns Winner > 40% WR and > 10% PnL.
         """
         
-        # 1. Load Existing Licenses
+        # 1. Load Existing Licenses (Cache check)
         license_map = self.load_strategy_map()
         current_time = time.time()
         expiry_seconds = self.calib_settings.get('license_expiry_hours', 4) * 3600
         
-        # Explicit Definition to avoid NameError
+        # Load Thresholds
         min_pnl = float(self.calib_settings.get('min_pnl_pct', 10.0))
         min_wr = float(self.calib_settings.get('min_win_rate', 40.0))
         
-        # USE INSTANCE VARIABLE (Public for Main)
-        self.approved_pairs = {} 
-        approved_pairs = self.approved_pairs # Local alias for compatibility below
+        # 2. LIST MANAGEMENT (RESET vs INCREMENTAL)
+        if reset_lists:
+            # Full Reset (Weekly maintenance)
+            self.vip_majors = []
+            self.vip_grinders = []
+            self.vip_scalpers = []
+            self.major_subgroups = {"stable_majors": []}
+            self.scalper_subgroups = {"group_a": [], "group_b": []}
+            self.grinder_subgroups = {"proven_winners": []}
+            self.approved_pairs = {}
+        # else: Keep existing lists, just add new winners
         
-        # 2a. VIP MAJORS (Always Approved, Instant)
-        # Strategy: MAJOR_REVERSION
-        print(">>> Loading VIP Majors...")
-        for pair in self.vip_majors:
-            approved_pairs[pair] = 'MAJOR_REVERSION'
+        print(f">>> STARTING PRODUCTION TOURNAMENT (7 VARIANTS) FOR {len(candidate_list)} PAIRS")
+        print(f"    Criteria: WR >= {min_wr}%, PnL >= {min_pnl}% | Mode: {'RESET' if reset_lists else 'INCREMENTAL'}")
+        
+        print(f">>> STARTING PRODUCTION TOURNAMENT (7 VARIANTS) FOR {len(candidate_list)} PAIRS")
+        print(f"    Criteria: WR >= {min_wr}%, PnL >= {min_pnl}%")
 
-        # 2b. VIP GRINDERS (Preferred Trend Followers)
-        # Strategy: GRINDER
-        # These pairs are historically better at trending (TRX, SUI, etc)
-        # ELITE WINNERS (>10% Profit)
-        print(">>> Loading VIP Grinders...")
-        for pair in self.vip_grinders:
-            approved_pairs[pair] = 'GRINDER'
-            
-        # 2c. VIP SCALPERS (High Volatility)
-        # Strategy: SCALPER
-        # Winners: WIF, PEPE, FLOKI, etc.
-        print(">>> Loading VIP Scalpers...")
-        for pair in self.vip_scalpers:
-            approved_pairs[pair] = 'SCALPER'
-            
-        # 3. Process Candidates
-        to_calibrate = []
+        VARIANTS = [
+            'MAJOR_VOLATILE', 'MAJOR_STABLE', 
+            'SCALPER_A', 'SCALPER_B', 'SCALPER_C',
+            'GRINDER_DEFAULT', 'GRINDER_PROVEN'
+        ]
         
+        # 2b. SORT CANDIDATES BY TREND STRENGTH (ADX) - User Priority
+        print(">>> Analyzing Trend Strength to prioritize candidates...")
+        scored_candidates = []
         for symbol in candidate_list:
-            if symbol in approved_pairs: continue # VIPs already handled
+            # Fetch minimal data for trend check
+            try:
+                ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe='15m', limit=100)
+                if not ohlcv: continue
+                df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
+                df = TechnicalAnalysis.calculate_indicators(df)
+                adx = df['adx'].iloc[-1]
+                scored_candidates.append( (symbol, adx) )
+            except:
+                scored_candidates.append( (symbol, 0) )
+        
+        # Sort Descending (Highest ADX first)
+        scored_candidates.sort(key=lambda x: x[1], reverse=True)
+        candidate_list = [x[0] for x in scored_candidates]
+        print(f"    Top Trending Candidates: {[x[0] for x in scored_candidates[:5]]}")
+        
+        # 3. TOURNAMENT LOOP
+        for symbol in candidate_list:
             
-            # CHECK LICENSE
-            if symbol in license_map:
-                data = license_map[symbol]
-                age = current_time - data['timestamp']
+            df_15m, df_1m = self.fetch_calibration_data(symbol, limit=6000)
+            if df_15m is None or df_1m is None: continue
+            
+            best_stats = None
+            best_pnl = -999.0
+            best_variant = None
+            
+            for variant in VARIANTS:
+                # Inject Mock
+                self.detector.set_mock_variant(variant)
                 
-                if age < expiry_seconds:
-                    # Valid License: Reuse Strategy
-                    approved_pairs[symbol] = data['strategy']
-                    continue
-                else:
-                    print(f"   [{symbol}] License Expired. Re-calibrating.")
+                # Determine Base Strategy for Simulation
+                if 'MAJOR' in variant: base_strat = 'MAJOR_REVERSION'
+                elif 'SCALPER' in variant: base_strat = 'SCALPER'
+                elif 'GRINDER' in variant: base_strat = 'GRINDER'
+                
+                stats = self.run_simulation(df_15m, df_1m, symbol, base_strat)
+                if not stats: continue
+                
+                # Check Criteria
+                is_qualified = (stats['pnl_pct'] >= min_pnl) and (stats['wr'] >= min_wr)
+                
+                if is_qualified:
+                    if stats['pnl_pct'] > best_pnl:
+                        best_pnl = stats['pnl_pct']
+                        best_stats = stats
+                        best_variant = variant
             
-            # If not valid or new, add to queue
-            to_calibrate.append(symbol)
+            # 4. ASSIGN WINNER
+            if best_variant:
+                print(f"   [{symbol}] WINNER: {best_variant:<20} | PnL: {best_stats['pnl_pct']:>5.1f}% | WR: {best_stats['wr']:.1f}%")
+                
+                # Map to Structs
+                if 'MAJOR' in best_variant:
+                    self.vip_majors.append(symbol)
+                    self.approved_pairs[symbol] = 'MAJOR_REVERSION'
+                    if 'STABLE' in best_variant:
+                         self.major_subgroups.setdefault('stable_majors', []).append(symbol)
+                         
+                elif 'SCALPER' in best_variant:
+                    self.vip_scalpers.append(symbol)
+                    self.approved_pairs[symbol] = 'SCALPER'
+                    if 'SCALPER_A' in best_variant:
+                        self.scalper_subgroups.setdefault('group_a', []).append(symbol)
+                    elif 'SCALPER_B' in best_variant:
+                        self.scalper_subgroups.setdefault('group_b', []).append(symbol)
+                        
+                elif 'GRINDER' in best_variant:
+                    self.vip_grinders.append(symbol)
+                    self.approved_pairs[symbol] = 'GRINDER'
+                    if 'PROVEN' in best_variant:
+                        self.grinder_subgroups.setdefault('proven_winners', []).append(symbol)
+                        
+                # Update License cache
+                license_map[symbol] = {
+                    'strategy': self.approved_pairs[symbol],
+                    'variant': best_variant,
+                    'timestamp': current_time,
+                    'stats': best_stats
+                }
+                
+                # INCREMENTAL SAVE (Safety First)
+                self._save_market_config()
+                self.save_strategy_map(license_map)
+            else:
+                print(f"   [{symbol}] REJECTED. Best PnL: {best_pnl:.1f}%")
 
-        # 4. Run Tournament only for Queue
-        if to_calibrate:
-            print(f">>> Running Strategy Tournament for {len(to_calibrate)} New/Expired Candidates...")
-            strategies_to_test = ['MAJOR_REVERSION', 'GRINDER', 'SCALPER']
-            
-            for symbol in to_calibrate:
-                df_15m, df_1m = self.fetch_calibration_data(symbol)
-                if df_15m is None or df_1m is None: continue
-                
-                best_result = None
-                best_pnl = -999.0
-                
-                for strat in strategies_to_test:
-                    stats = self.run_simulation(df_15m, df_1m, symbol, strat)
-                    if not stats: continue
-                    
-                    # RIGOROUS CRITERIA
-                    is_qualified = (stats['pnl_pct'] >= min_pnl) and (stats['wr'] >= min_wr)
-                    
-                    if is_qualified:
-                        if stats['pnl_pct'] > best_pnl:
-                            best_pnl = stats['pnl_pct']
-                            best_result = stats
-                
-                if best_result:
-                    print(f"   [{symbol}] WINNER: {best_result['strategy']:<15} | PnL: {best_result['pnl_pct']:>5.1f}%")
-                    approved_pairs[symbol] = best_result['strategy']
-                    
-                    # UPDATE LICENSE
-                    license_map[symbol] = {
-                        'strategy': best_result['strategy'],
-                        'timestamp': current_time,
-                        'stats': best_result # Optional stats storage
-                    }
-                else:
-                    reason = f"Best PnL: {best_pnl:.2f}%" if best_pnl > -999 else "No Valid Trades"
-                    print(f"   [{symbol}] REJECTED ({reason}) vs Target {min_pnl}%")
-
-            # Save updated map
-            self.save_strategy_map(license_map)
-            
-        else:
-            print(">>> All candidates have valid licenses. No new calibration needed.")
-                
-        return approved_pairs
+        # 5. SAVE EVERYTHING
+        self._save_market_config()
+        self.save_strategy_map(license_map)
+        
+        return self.approved_pairs
 
     def run_simulation(self, df_15m, df_1m, symbol, strategy_type):
         """ 
@@ -354,152 +397,3 @@ class CalibrationManager:
             'pnl_pct': (current_balance - initial_balance) / initial_balance * 100,
             'wr': (wins/trades*100) if trades > 0 else 0
         }
-
-    def load_strategy_map(self):
-        """ Load the persistent strategy map from disk """
-        map_file = os.path.join(self.data_dir, "strategy_licenses.json")
-        if os.path.exists(map_file):
-            try:
-                import json
-                with open(map_file, 'r') as f:
-                    return json.load(f)
-            except: 
-                return {}
-        return {}
-
-    def save_strategy_map(self, strategy_map):
-        """ Save the map with timestamps """
-        if not os.path.exists(self.data_dir):
-            os.makedirs(self.data_dir)
-            
-        map_file = os.path.join(self.data_dir, "strategy_licenses.json")
-        try:
-            import json
-            with open(map_file, 'w') as f:
-                json.dump(strategy_map, f, indent=4)
-        except Exception as e:
-            print(f"Failed to save strategy map: {e}")
-
-    def calibrate(self, candidate_list):
-        """
-        Main Routine: The Strategy Tournament (Optimized with Licenses).
-        """
-        # 1. Load Existing Licenses
-        license_map = self.load_strategy_map()
-        current_time = time.time()
-        expiry_seconds = self.calib_settings.get('license_expiry_hours', 4) * 3600
-        
-        # Explicit Definition (Retry)
-        min_pnl = float(self.calib_settings.get('min_pnl_pct', 10.0))
-        min_wr = float(self.calib_settings.get('min_win_rate', 40.0))
-        
-        approved_pairs = {}
-        
-        # 2a. VIP MAJORS (Always Approved, Instant)
-        # Strategy: MAJOR_REVERSION
-        print(">>> Loading VIP Majors...")
-        for pair in self.vip_majors:
-            approved_pairs[pair] = 'MAJOR_REVERSION'
-
-        # 2b. VIP GRINDERS (Preferred Trend Followers)
-        # Strategy: GRINDER
-        # These pairs are historically better at trending (TRX, SUI, etc)
-        # ELITE WINNERS (>10% Profit)
-        print(">>> Loading VIP Grinders...")
-        for pair in self.vip_grinders:
-            approved_pairs[pair] = 'GRINDER'
-            
-        # 2c. VIP SCALPERS (High Volatility)
-        # Strategy: SCALPER
-        # Winners: WIF, PEPE, FLOKI, etc.
-        print(">>> Loading VIP Scalpers...")
-        for pair in self.vip_scalpers:
-            approved_pairs[pair] = 'SCALPER'
-            
-        # 3. Process Candidates
-        to_calibrate = []
-        
-        for symbol in candidate_list:
-            if symbol in approved_pairs: continue # VIPs already handled
-            
-            # CHECK LICENSE
-            if symbol in license_map:
-                data = license_map[symbol]
-                age = current_time - data['timestamp']
-                
-                if age < expiry_seconds:
-                    # Valid License: Reuse Strategy
-                    approved_pairs[symbol] = data['strategy']
-                    continue
-                else:
-                    print(f"   [{symbol}] License Expired. Re-calibrating.")
-            
-            # If not valid or new, add to queue
-            to_calibrate.append(symbol)
-
-        # 4. Run Tournament only for Queue
-        if to_calibrate:
-            print(f">>> Running Strategy Tournament for {len(to_calibrate)} New/Expired Candidates...")
-            strategies_to_test = ['MAJOR_REVERSION', 'GRINDER', 'SCALPER']
-            
-            for symbol in to_calibrate:
-                df_15m, df_1m = self.fetch_calibration_data(symbol)
-                if df_15m is None or df_1m is None: continue
-                
-                best_result = None
-                best_pnl = -999.0
-                
-                for strat in strategies_to_test:
-                    stats = self.run_simulation(df_15m, df_1m, symbol, strat)
-                    if not stats: continue
-                    
-                    # RIGOROUS CRITERIA (Loaded from JSON)
-                    # Requires BOTH Profit and Win Rate
-                    is_qualified = (stats['pnl_pct'] >= min_pnl) and (stats['wr'] >= min_wr)
-                    
-                    if is_qualified:
-                        if stats['pnl_pct'] > best_pnl:
-                            best_pnl = stats['pnl_pct']
-                            best_result = stats
-                
-                if best_result:
-                    print(f"   [{symbol}] WINNER: {best_result['strategy']:<15} | PnL: {best_result['pnl_pct']:>5.1f}%")
-                    approved_pairs[symbol] = best_result['strategy']
-                    
-                    # UPDATE LICENSE
-                    license_map[symbol] = {
-                        'strategy': best_result['strategy'],
-                        'timestamp': current_time,
-                        'stats': best_result 
-                    }
-                    
-                    # AUTO-PROMOTE TO CONFIG (Make it official)
-                    self.promote_candidate(symbol, best_result['strategy'])
-                else:
-                    print(f"   [{symbol}] REJECTED (No profitable strategy)")
-
-            # Save updated map
-            self.save_strategy_map(license_map)
-            
-        else:
-            print(">>> All candidates have valid licenses. No new calibration needed.")
-                
-        return approved_pairs
-
-# --- TEST BLOCK ---
-if __name__ == "__main__":
-    manager = CalibrationManager()
-    
-    # Test Candidates (Mix)
-    candidates = [
-        'TRXUSDT', 'PEPEUSDT', # Grinder Winners
-        'LTCUSDT',             # The Loser
-        'SHIBUSDT',            # Scalper Candidate
-        'WIFUSDT'              # Scalper King (should verify Scalper auto-select)
-    ]
-    
-    final_list = manager.calibrate(candidates)
-    
-    print("\n=== FINAL TRADING LIST ===")
-    for k, v in final_list.items():
-        print(f"{k}: {v}")

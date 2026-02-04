@@ -105,46 +105,88 @@ class TrendBot:
         self.scanner_task = asyncio.create_task(self.continuous_scanner_loop())
         
         # 4. Maintenance & Calibration Loop
-        last_full_scan = 0
+        last_maintenance = 0
+        last_discovery = 0
         
         while self.running:
             try:
                 now = time.time()
-                is_full_scan = False
                 
-                # Determine Scan Type
-                if now - last_full_scan > (24 * 3600):
-                    logger.info("🕒 DAILY MAINTENANCE: Full Market Scan (Volume + Trending)")
-                    is_full_scan = True
-                    last_full_scan = now
-                else:
-                    logger.info("🕒 4H UPDATE: Quick Scan (Trending Only)")
-                
-                # A. Scan Candidates
-                candidates = await self.scan_market_candidates(full_scan=is_full_scan)
-                if not candidates:
-                    logger.warning("No candidates found. Retrying in 10m...")
-                    await asyncio.sleep(600)
-                    continue
+                # --- PRIORITY 1: SCHEDULED MAINTENANCE (4H / 7D) ---
+                if now - last_maintenance > (4 * 3600):
                     
-                # B. Calibrate (Tournament) - ASYNC PARALLEL
-                # This runs in a separate thread/process to NOT BLOCK the Safety Monitor
-                logger.info("⏳ Starting Parallel Calibration (This may take a while)...")
-                loop = asyncio.get_running_loop()
-                approved_map = await loop.run_in_executor(
-                    self.executor, 
-                    self.calibrator.calibrate, 
-                    candidates
-                )
-                
-                # C. Update Active List
-                new_list = list(approved_map.keys())
-                if new_list:
-                    self.active_trading_list = new_list
-                    logger.info(f"✅ Active Trading List Updated ({len(new_list)} pairs): {new_list}")
-                
-                # Wait 4 Hours before next check
-                await asyncio.sleep(4 * 3600)
+                    # Determine Scan Type (Weekly vs 4H)
+                    current_hour = datetime.utcnow().hour
+                    is_tokyo = 0 <= current_hour < 9
+                    # Last FULL scan time needs to be tracked persistently or roughly estimated
+                    # Using a rough check here. If we want strict 7 days + Tokyo, we need another variable.
+                    # Re-using last_full_scan logic from self if accessible, or just checking condition.
+                    # Let's simplify: Weekly logic inside here.
+                    
+                    is_full_scan = False
+                    # Check if 7 days passed since last FULL reset (we need a var for this)
+                    if not hasattr(self, 'last_weekly_reset'): self.last_weekly_reset = 0
+                    
+                    days_since_weekly = (now - self.last_weekly_reset) / (24 * 3600)
+                    
+                    if days_since_weekly >= 7 and is_tokyo:
+                        logger.info("🕒 WEEKLY MAINTENANCE (TOKYO): Full Market Reset (Volume 10M+ + Trending)")
+                        is_full_scan = True
+                        self.last_weekly_reset = now
+                        
+                        # WIPE SLATE CLEAN
+                        logger.warning("🧹 FLUSHING LISTS: Starting fresh calibration cycle.")
+                        self.active_trading_list = [] 
+                    else:
+                        logger.info("🕒 4H UPDATE: Quick Scan (Trending Only)")
+                        
+                    # Scan
+                    candidates = await self.scan_market_candidates(full_scan=is_full_scan)
+                    if candidates:
+                        logger.info(f"⏳ Starting Maintenance Calibration (Reset=True) for {len(candidates)} pairs...")
+                        loop = asyncio.get_running_loop()
+                        approved_map = await loop.run_in_executor(
+                            self.executor, 
+                            self.calibrator.calibrate, 
+                            candidates,
+                            True # RESET LISTS = TRUE
+                        )
+                        # Sync List
+                        self.active_trading_list = list(approved_map.keys())
+                        logger.info(f"✅ Active Trading List Updated ({len(self.active_trading_list)} pairs)")
+                        
+                    last_maintenance = now
+                    last_discovery = now # Reset discovery timer
+                    
+                # --- PRIORITY 2: REACTIVE DISCOVERY (Every 10 Mins) ---
+                elif now - last_discovery > 600:
+                    logger.info("🔭 REACTIVE DISCOVERY: Scanning for New Trends...")
+                    
+                    # 1. Get Top Trending Gainers
+                    gainers = await self.market.get_top_gainers(limit=20)
+                    
+                    # 2. Filter: Only NEW pairs not in current list
+                    unknowns = [s for s in gainers if s not in self.active_trading_list]
+                    
+                    if unknowns:
+                        logger.info(f"⚡ NEW TRENDS DETECTED: {unknowns} -> Calibrating Incrementally...")
+                        loop = asyncio.get_running_loop()
+                        
+                        # Run Calibration with RESET=FALSE (Append Mode)
+                        # This adds winners to the existing list in memory/disk
+                        await loop.run_in_executor(
+                             self.executor,
+                             self.calibrator.calibrate,
+                             unknowns,
+                             False # RESET LISTS = FALSE (Incremental)
+                        )
+                        # Live Sync in Scanner Loop will pick these up automatically!
+                    else:
+                        logger.info("🔭 No new trends found.")
+                        
+                    last_discovery = now
+
+                await asyncio.sleep(60) # Check timers every minute
                 
             except Exception as e:
                 logger.error(f"Main Loop Error: {e}")
@@ -164,9 +206,10 @@ class TrendBot:
             gainers = await self.market.get_top_gainers(limit=20)
             candidates.update(gainers)
             
-            # 2. Volume - Only on Full Scan
+            # 2. Volume - Only on Full Scan (Weekly Tokyo Reset)
+            # Requirement: Volume > 10M
             if full_scan:
-                vol_pairs = await self.market.get_top_volume_pairs(limit=50)
+                vol_pairs = await self.market.get_top_volume_pairs(limit=50, min_vol=10000000)
                 candidates.update(vol_pairs)
                 
             logger.info(f"🔎 Scanned Market. Found {len(candidates)} unique candidates.")
@@ -279,29 +322,56 @@ class TrendBot:
                 if len(self.market.positions) >= config.MAX_OPEN_POSITIONS:
                     await asyncio.sleep(30)
                     continue
-
-                # 2. Refresh Priority List
-                if not self.active_trading_list:
-                    logger.warning("No Active Trading List! Waiting for Calibration...")
-                    await asyncio.sleep(10)
-                    continue
                     
-                symbols = self.active_trading_list 
+                # 1.5. LIVE SYNC (Calibrator Integration)
+                # "Conforme se va llenando la lista..." - User Request
+                # If calibration is running, this picks up new winners immediately.
+                if self.calibrator and self.calibrator.approved_pairs:
+                    live_winners = list(self.calibrator.approved_pairs.keys())
+                    # Only update if we found new ones (avoid potential race conditions shrinking list)
+                    if len(live_winners) > len(self.active_trading_list):
+                        # Filter out duplicates while preserving order? 
+                        # Calibrator dict is insertion ordered (by trend priority now).
+                        self.active_trading_list = live_winners
+                        # logger.info(f"⚡ LIVE SYNC: Active list updated to {len(self.active_trading_list)} pairs.")
+                    
+                # 2. TREND AUDIT & PRIORITY SORT (Dynamic)
+                # User Requirement: "Priority to Trend", "Remove if Trend Ends"
+                # To save API, we assume calibration set the baseline, but we check here too.
                 
-                # STRICT PRIORITY SORTING: Scalper (2) > Grinder (1) > Major (3)
-                # This ensures we fill capacity with high-potential trades first.
-                priority_map = {'SCALPER': 2, 'GRINDER': 1, 'MAJOR_REVERSION': 3}
+                scored_symbols = []
+                # Use a copy to avoid modification issues
+                for symbol in list(self.active_trading_list):
+                    # Quick Trend Check (Cached or Fresh)
+                    trend_score = await self.market.get_adx_now(symbol) # Ensure this method exists or use fallback
+                    
+                    if trend_score < 20: 
+                        # PRUNE: Trend Ended (Strict Mode)
+                        # User: "Once trend ends, must be removed."
+                        logger.warning(f"📉 TREND DIED: {symbol} (ADX {trend_score:.1f} < 20). Removing from Active List.")
+                        if symbol in self.active_trading_list:
+                             self.active_trading_list.remove(symbol)
+                        
+                        # Also ban from calibrator to keep file sync?
+                        # self.calibrator.ban_candidate(symbol) # Maybe too aggressive?
+                        # Just removing from memory allows "Reactive Discovery" to find it again later if it bounces back.
+                        continue 
+                        
+                    scored_symbols.append((symbol, trend_score))
                 
-                # Helper to get priority (Default to 3 if unknown)
-                def get_prio(sym):
-                    strat = self.calibrator.approved_pairs.get(sym, 'MAJOR_REVERSION')
-                    return priority_map.get(strat, 3)
-                
-                # Sort in place (Lower number = Higher Priority)
-                symbols.sort(key=get_prio)
+                # Sort: Strongest Trend FIRST
+                scored_symbols.sort(key=lambda x: x[1], reverse=True)
+                symbols = [x[0] for x in scored_symbols]
                 
                 # 3. Global Conditions & FILTERS
+                # (symbols is now sorted by ADX Descending from the block above)
                 
+                if not symbols:
+                    if not self.active_trading_list:
+                        logger.warning("No Active Trading List! Waiting for Calibration...")
+                    await asyncio.sleep(10)
+                    continue
+
                 # --- PRE-CALCULATION: EQUITY ---
                 current_equity = self.start_balance # Default (Safe Fallback)
                 if not self.market.is_dry_run:

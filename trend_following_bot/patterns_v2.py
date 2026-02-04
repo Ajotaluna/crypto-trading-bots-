@@ -55,6 +55,13 @@ class PatternDetector:
     def update_strategy_map(self, new_map):
         self.strategy_map = new_map
         
+    def set_mock_variant(self, variant):
+        """ 
+        CALIBRATION MODE: Forces specific logic path for Tournament.
+        Variants: MAJOR_VOLATILE, MAJOR_STABLE, SCALPER_A, SCALPER_B, SCALPER_C, GRINDER_DEFAULT, GRINDER_PROVEN
+        """
+        self.mock_variant = variant
+
     def analyze(self, df_15m, df_daily=None, btc_trend=0.0, symbol=None, force_strategy=None):
         """
         Main Enty Point.
@@ -67,12 +74,19 @@ class PatternDetector:
         self.curr = df.iloc[-1]
         self.df = df
         
-        # 2. STRATEGY ROUTING (Or Forced Override)
+        # 2. CALIBRATION / TOURNAMENT OVERRIDE
+        if hasattr(self, 'mock_variant') and self.mock_variant:
+            # Map Variant to Function Call
+            if 'MAJOR' in self.mock_variant:
+                return self._analyze_major_strategy(bypass_whitelist=True)
+            elif 'SCALPER' in self.mock_variant:
+                return self._analyze_scalper_strategy()
+            elif 'GRINDER' in self.mock_variant:
+                return self._analyze_grinder_strategy()
+
+        # 3. STRATEGY ROUTING (Production)
         
-        # EXECUTE STRATEGY ANALYSIS
-        signal = None
-        
-        # A. CALIBRATION OVERRIDE
+        # A. CALIBRATION OVERRIDE (Legacy)
         if force_strategy == 'MAJOR_REVERSION':
             signal = self._analyze_major_strategy(bypass_whitelist=True)
         elif force_strategy == 'GRINDER':
@@ -137,19 +151,21 @@ class PatternDetector:
         
         # GROUP A: The Champions (Proven > 10% Profit)
         # Logic: High trust, standard panic settings.
-        if self.symbol in self.SCALPER_GROUPS.get('group_a', []):
+        if (hasattr(self, 'mock_variant') and self.mock_variant == 'SCALPER_A') or \
+           (self.symbol in self.SCALPER_GROUPS.get('group_a', [])):
              rsi_limit = 30
              require_macd = False
              
         # GROUP B: The Proven New (Strict)
         # ORDI, MEME performed well.
-        elif self.symbol in self.SCALPER_GROUPS.get('group_b', []):
+        elif (hasattr(self, 'mock_variant') and self.mock_variant == 'SCALPER_B') or \
+             (self.symbol in self.SCALPER_GROUPS.get('group_b', [])):
              rsi_limit = 25 
              require_macd = False
         
         # GROUP C: The Laggards (DOGE, SHIB) -> REMOVED FROM ELITE
         else:
-             rsi_limit = 25 # Default fallback
+             rsi_limit = 25 # Default fallback (SCALPER_C hits this by default logic flow)
              require_macd = True
              
         # 1. Setup: Price was outside Lower BB
@@ -207,7 +223,8 @@ class PatternDetector:
         require_delta = True
 
         # IF it's a known Proven Winner, relax conditions
-        if self.symbol in self.GRINDER_GROUPS.get('proven_winners', []):
+        if (hasattr(self, 'mock_variant') and self.mock_variant == 'GRINDER_PROVEN') or \
+           (self.symbol in self.GRINDER_GROUPS.get('proven_winners', [])):
              rsi_threshold = 45
              adx_threshold = 20
 
@@ -259,7 +276,8 @@ class PatternDetector:
         require_volume = True
 
         # Proven Stable Majors
-        if self.symbol in self.MAJOR_GROUPS.get('stable_majors', []):
+        if (hasattr(self, 'mock_variant') and self.mock_variant == 'MAJOR_STABLE') or \
+           (self.symbol in self.MAJOR_GROUPS.get('stable_majors', [])):
             rsi_limit = 30
             adx_limit = 50
             require_volume = False

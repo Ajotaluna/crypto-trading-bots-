@@ -1,53 +1,16 @@
 {
-    "vip_majors": [
-        "BTCUSDT",
-        "BNBUSDT",
-        "SOLUSDT",
-        "XRPUSDT",
-        "DOTUSDT"
-    ],
+    "vip_majors": [],
     "major_subgroups": {
-        "stable_majors": [
-            "BNBUSDT",
-            "DOTUSDT",
-            "XRPUSDT"
-        ]
+        "stable_majors": []
     },
-    "vip_grinders": [
-        "TRXUSDT",
-        "SUIUSDT",
-        "ADAUSDT",
-        "AVAXUSDT",
-        "LINKUSDT",
-        "ETHUSDT"
-    ],
+    "vip_grinders": [],
     "grinder_subgroups": {
-        "proven_winners": [
-            "TRXUSDT",
-            "SUIUSDT",
-            "ADAUSDT",
-            "AVAXUSDT",
-            "LINKUSDT",
-            "ETHUSDT"
-        ]
+        "proven_winners": []
     },
-    "vip_scalpers": [
-        "WIFUSDT",
-        "FLOKIUSDT",
-        "PEPEUSDT",
-        "ORDIUSDT",
-        "MEMEUSDT"
-    ],
+    "vip_scalpers": [],
     "scalper_subgroups": {
-        "group_a": [
-            "WIFUSDT",
-            "FLOKIUSDT",
-            "PEPEUSDT"
-        ],
-        "group_b": [
-            "ORDIUSDT",
-            "MEMEUSDT"
-        ]
+        "group_a": [],
+        "group_b": []
     },
     "calibration_settings": {
         "limit": 6000,

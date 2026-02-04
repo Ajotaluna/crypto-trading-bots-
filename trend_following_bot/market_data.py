@@ -342,9 +342,10 @@ class MarketData:
         """Fetch Top Gaining Pairs (Vol > 5M)"""
         return await self._get_ranked_pairs(rank_by='priceChangePercent', limit=limit, min_vol=5000000)
 
-    async def get_top_volume_pairs(self, limit=50):
+    async def get_top_volume_pairs(self, limit=50, min_vol=None):
         """Fetch Top Volume Pairs"""
-        return await self._get_ranked_pairs(rank_by='quoteVolume', limit=limit, min_vol=config.MIN_VOLUME_USDT)
+        volume_threshold = min_vol if min_vol is not None else config.MIN_VOLUME_USDT
+        return await self._get_ranked_pairs(rank_by='quoteVolume', limit=limit, min_vol=volume_threshold)
 
     async def _get_ranked_pairs(self, rank_by='quoteVolume', limit=20, min_vol=1000000):
         """Generic Ranking Helper"""
@@ -623,6 +624,23 @@ class MarketData:
             position_size_usdt = max_allowed_notional
             
         return position_size_usdt
+
+    async def get_adx_now(self, symbol):
+        """ Quick ADX Check for Dynamic Pruning """
+        try:
+            # Fetch 100 candles (15m) for speed
+            # Use get_klines which handles retry/dryrun logic
+            ohlcv = await self.get_klines(symbol, interval='15m', limit=100)
+            if ohlcv is None or ohlcv.empty: return 0.0
+            
+            from technical_analysis import TechnicalAnalysis
+            df = TechnicalAnalysis.calculate_indicators(ohlcv)
+            if 'adx' in df.columns:
+                return df['adx'].iloc[-1]
+            return 0.0
+        except Exception as e:
+            # logger.debug(f"ADX Check Failed: {e}")
+            return 0.0
 
     # --- Execution Methods ---
     
