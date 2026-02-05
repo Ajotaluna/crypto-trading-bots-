@@ -501,10 +501,12 @@ class TrendBot:
                     if candidate:
                         # GLOBAL EXHAUSTION CHECK (User Request: "Paso antes de disparar")
                         # Prevents buying at the absolute top (RSI > 75, etc.)
-                        is_tired, reason = self.check_exhaustion(symbol, candidate['df'])
-                        if is_tired:
-                             logger.warning(f"🛡️ SAFETY: Blocked Entry on {symbol}. Reason: {reason}")
-                             continue
+                        # FIX: ONLY APPLY TO LONG SIGNALS! Shorts WANT exhaustion.
+                        if candidate['signal']['direction'] == 'LONG':
+                            is_tired, reason = self.check_exhaustion(symbol, candidate['df'])
+                            if is_tired:
+                                 logger.warning(f"🛡️ SAFETY: Blocked LONG on {symbol}. Reason: {reason}")
+                                 continue
 
                         logger.info(f"✨ OPPORTUNITY FOUND: {symbol} (Score {candidate['score']}) -> Dispatching!")
                         if config.SMART_ENTRY_ENABLED:

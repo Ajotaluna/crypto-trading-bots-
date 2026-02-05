@@ -119,17 +119,31 @@ class CalibrationManager:
     def fetch_calibration_data(self, symbol, limit=None):
         """ 
         Downloads 15m (Analysis) and 1m (Precision) data. 
+        ROBUST VERSION: Includes Retries for instability.
         """
         # Load Limit from Config (Default 6000 to match Backtest)
         if limit is None:
              limit = self.calib_settings.get('limit', 6000)
              
-        try:
-            print(f"   Fetching {limit} candles for calibration (Deep Scan)...")
-            # 1. Fetch 15m Analysis Data
-            ohlcv_15m = self.exchange.fetch_ohlcv(symbol, timeframe='15m', limit=limit)
-            if not ohlcv_15m: return None, None
+        # RETRY WRAPPER FOR 15m
+        ohlcv_15m = None
+        for attempt in range(3):
+            try:
+                print(f"   Fetching {limit} candles for calibration (Deep Scan)... Attempt {attempt+1}/3")
+                ohlcv_15m = self.exchange.fetch_ohlcv(symbol, timeframe='15m', limit=limit)
+                if ohlcv_15m: break
+                else: 
+                     print(f"   ⚠️ Warning: Empty 15m data. Retrying...")
+                     time.sleep(1)
+            except Exception as e:
+                print(f"   ⚠️ Fetch Error (15m): {e}. Retrying...")
+                time.sleep(2)
+        
+        if not ohlcv_15m: 
+            print(f"   ❌ FAILED to fetch 15m data for {symbol} after 3 attempts.")
+            return None, None
             
+        try:
             df_15m = pd.DataFrame(ohlcv_15m, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
             df_15m['time'] = pd.to_datetime(df_15m['time'], unit='ms')
             df_15m['symbol'] = symbol
@@ -141,17 +155,34 @@ class CalibrationManager:
             # Batch fetch 1m data
             all_1m = []
             since = start_time
+            
             while True:
-                ohlcv_1m = self.exchange.fetch_ohlcv(symbol, timeframe='1m', limit=1000, since=since)
-                if not ohlcv_1m: break
+                batch = None
+                # RETRY WRAPPER FOR 1m BATCH
+                for attempt in range(3):
+                    try:
+                        batch = self.exchange.fetch_ohlcv(symbol, timeframe='1m', limit=1000, since=since)
+                        if batch: break
+                        time.sleep(0.5)
+                    except Exception as e:
+                        print(f"   ⚠️ Fetch Error (1m batch): {e}. Waiting...")
+                        time.sleep(2)
                 
-                all_1m.extend(ohlcv_1m)
-                last_ts = ohlcv_1m[-1][0]
+                if not batch:
+                    # If batch fails after retries, we might be at end or stuck. 
+                    # If we have "enough" data, maybe proceed? 
+                    # For now, break loop.
+                    break
+                
+                all_1m.extend(batch)
+                last_ts = batch[-1][0]
                 since = last_ts + 60000 # +1 min
                 
                 if last_ts >= end_time: break
                 if len(all_1m) > limit * 16: break # Safety cap
-                time.sleep(0.5) # Rate limit protection (Safe Mode)
+                
+                # Dynamic Sleep (Faster if smooth, slower if struggling)
+                time.sleep(0.2) 
 
             df_1m = pd.DataFrame(all_1m, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
             df_1m['time'] = pd.to_datetime(df_1m['time'], unit='ms')
@@ -163,7 +194,7 @@ class CalibrationManager:
             return df_15m, df_1m
             
         except Exception as e:
-            print(f"[Calibration] Error fetching {symbol}: {e}")
+            print(f"[Calibration] Fatal Logic Error processing {symbol}: {e}")
             return None, None
 
     def load_strategy_map(self):
