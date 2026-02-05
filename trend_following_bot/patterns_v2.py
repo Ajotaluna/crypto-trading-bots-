@@ -74,46 +74,52 @@ class PatternDetector:
         self.curr = df.iloc[-1]
         self.df = df
         
+        signal = None
+        
         # 2. CALIBRATION / TOURNAMENT OVERRIDE
         if hasattr(self, 'mock_variant') and self.mock_variant:
             # Map Variant to Function Call
             if 'MAJOR' in self.mock_variant:
-                return self._analyze_major_strategy(bypass_whitelist=True)
+                signal = self._analyze_major_strategy(bypass_whitelist=True)
             elif 'SCALPER' in self.mock_variant:
-                return self._analyze_scalper_strategy()
+                signal = self._analyze_scalper_strategy()
             elif 'GRINDER' in self.mock_variant:
-                return self._analyze_grinder_strategy()
+                signal = self._analyze_grinder_strategy()
+                
+            # IMPORTANT: We allow this signal to flow down to Synergy Logic (Section D)
 
         # 3. STRATEGY ROUTING (Production)
-        
-        # A. CALIBRATION OVERRIDE (Legacy)
-        if force_strategy == 'MAJOR_REVERSION':
-            signal = self._analyze_major_strategy(bypass_whitelist=True)
-        elif force_strategy == 'GRINDER':
-            signal = self._analyze_grinder_strategy()
-        elif force_strategy == 'SCALPER':
-            signal = self._analyze_scalper_strategy()
+        # Only run if we are NOT in Calibration Mode (no mock_variant)
+        if signal is None and (not hasattr(self, 'mock_variant') or not self.mock_variant):
             
-        # B. PRODUCTION DYNAMIC ROUTING (Priority)
-        elif self.symbol in self.strategy_map:
-            assigned_strat = self.strategy_map[self.symbol]
-            if assigned_strat == 'MAJOR_REVERSION':
-                 signal = self._analyze_major_strategy(bypass_whitelist=True) 
-            elif assigned_strat == 'SCALPER':
-                 signal = self._analyze_scalper_strategy()
-            elif assigned_strat == 'GRINDER':
-                 signal = self._analyze_grinder_strategy()
-            
-        # C. FALLBACK LEGACY ROUTING
-        else:
-            if self.symbol in self.MAJOR_PAIRS:
-                signal = self._analyze_major_strategy()
-                if signal is None and self.symbol in self.FALLBACK_PAIRS:
-                    signal = self._analyze_grinder_strategy()
-            elif self.symbol in self.SCALPER_PAIRS:
-                signal = self._analyze_scalper_strategy()
-            else:
+            # A. CALIBRATION OVERRIDE (Legacy)
+            if force_strategy == 'MAJOR_REVERSION':
+                signal = self._analyze_major_strategy(bypass_whitelist=True)
+            elif force_strategy == 'GRINDER':
                 signal = self._analyze_grinder_strategy()
+            elif force_strategy == 'SCALPER':
+                signal = self._analyze_scalper_strategy()
+                
+            # B. PRODUCTION DYNAMIC ROUTING (Priority)
+            elif self.symbol in self.strategy_map:
+                assigned_strat = self.strategy_map[self.symbol]
+                if assigned_strat == 'MAJOR_REVERSION':
+                     signal = self._analyze_major_strategy(bypass_whitelist=True) 
+                elif assigned_strat == 'SCALPER':
+                     signal = self._analyze_scalper_strategy()
+                elif assigned_strat == 'GRINDER':
+                     signal = self._analyze_grinder_strategy()
+                
+            # C. FALLBACK LEGACY ROUTING
+            else:
+                if self.symbol in self.MAJOR_PAIRS:
+                    signal = self._analyze_major_strategy()
+                    if signal is None and self.symbol in self.FALLBACK_PAIRS:
+                        signal = self._analyze_grinder_strategy()
+                elif self.symbol in self.SCALPER_PAIRS:
+                    signal = self._analyze_scalper_strategy()
+                else:
+                    signal = self._analyze_grinder_strategy()
 
         # D. SYNERGY LOGIC (Exhaustion Guard + Short Flip)
         
