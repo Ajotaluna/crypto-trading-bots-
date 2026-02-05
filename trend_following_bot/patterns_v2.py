@@ -114,6 +114,30 @@ class PatternDetector:
                 signal = self._analyze_scalper_strategy()
             else:
                 signal = self._analyze_grinder_strategy()
+
+        # D. SYNERGY LOGIC (Exhaustion Guard + Short Flip)
+        
+        # 1. Check Exhaustion on Long Signals
+        if signal and signal['direction'] == 'LONG':
+             is_exhausted = False
+             # RSI Limit
+             if self.curr['rsi'] > 75: is_exhausted = True
+             # BB Breach
+             if self.curr['close'] > self.curr['upper_bb']: is_exhausted = True
+             # Parabolic Extension
+             if self.curr['ema_50'] > 0:
+                 ext = (self.curr['close'] / self.curr['ema_50']) - 1.0
+                 if ext > 0.12: is_exhausted = True
+                 
+             if is_exhausted:
+                 # BLOCK LONG
+                 signal = None 
+                 
+        # 2. Top Hunter Fallback (If no Long or Blocked)
+        if signal is None:
+             # Optimization: Only run logic if RSI implies we are near top
+             if self.curr['rsi'] > 70:
+                 signal = self._analyze_top_hunter_short()
                 
         # 3. DYNAMIC SL/TP CALCULATION (The Risk Engine)
         if signal:
@@ -305,6 +329,50 @@ class PatternDetector:
             'weight': 1.0, 
             'reason': self.reasons,
             'strategy': 'MAJOR_REVERSION'
+        }
+
+    def _analyze_top_hunter_short(self):
+        """
+        STRATEGY 4: TOP HUNTER (SHORT EXHAUSTION)
+        User Idea: "If trends die at the top, let's short there."
+        Logic: Flip the Safety Guards to be Entry Triggers.
+        """
+        # 0. Indicators
+        if 'rsi' not in self.curr: return None
+        
+        # PARAMETERS
+        rsi_trigger = 75
+        bb_breach_trigger = True
+        ema_extension_trigger = 0.12 # 12% above EMA50
+        
+        triggers = []
+        
+        # 1. TRIGGER A: RSI EXHAUSTION
+        if self.curr['rsi'] > rsi_trigger:
+            triggers.append(f"RSI {self.curr['rsi']:.1f} > {rsi_trigger}")
+            
+        # 2. TRIGGER B: BOLLINGER BREACH (Price > Upper Band)
+        if bb_breach_trigger and self.curr['close'] > self.curr['upper_bb']:
+            triggers.append(f"Price > Upper BB")
+            
+        # 3. TRIGGER C: PARABOLIC EXTENSION
+        if self.curr['ema_50'] > 0:
+            extension = (self.curr['close'] / self.curr['ema_50']) - 1.0
+            if extension > ema_extension_trigger:
+                triggers.append(f"Parabolic {extension*100:.1f}% > {ema_extension_trigger*100:.0f}%")
+                
+        # DECISION: ANY trigger fires?
+        if not triggers: return None
+        
+        self.reasons.append(f"TopHunter: {', '.join(triggers)}")
+        
+        return {
+            'type': 'TOP_HUNTER',
+            'direction': 'SHORT', 
+            'score': 85, 
+            'weight': 1.0, 
+            'reason': self.reasons,
+            'strategy': 'TOP_HUNTER'
         }
 
 

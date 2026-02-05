@@ -499,6 +499,13 @@ class TrendBot:
                     candidate = await self.analyze_single_symbol(symbol, btc_trend)
                     
                     if candidate:
+                        # GLOBAL EXHAUSTION CHECK (User Request: "Paso antes de disparar")
+                        # Prevents buying at the absolute top (RSI > 75, etc.)
+                        is_tired, reason = self.check_exhaustion(symbol, candidate['df'])
+                        if is_tired:
+                             logger.warning(f"🛡️ SAFETY: Blocked Entry on {symbol}. Reason: {reason}")
+                             continue
+
                         logger.info(f"✨ OPPORTUNITY FOUND: {symbol} (Score {candidate['score']}) -> Dispatching!")
                         if config.SMART_ENTRY_ENABLED:
                             await self.add_to_pending(candidate['symbol'], candidate['signal'], candidate['df'])
@@ -838,6 +845,39 @@ class TrendBot:
                 await asyncio.sleep(60)
 
     async def check_watchlist(self): pass
+
+    def check_exhaustion(self, symbol, df):
+        """
+        FINAL GATEKEEPER: Checks if trend is statistically over-extended.
+        Returns: (True/False, Reason)
+        """
+        try:
+            if df is None or df.empty: return False, "No Data"
+            
+            curr = df.iloc[-1]
+            
+            # 1. RSI Ceiling
+            # User: "Determinad que tan cerca se esta de la cima"
+            if 'rsi' in curr and curr['rsi'] > 75:
+                return True, f"RSI {curr['rsi']:.1f} > 75 (Overbought)"
+                
+            # 2. Bollinger Cap
+            # Buying above the upper band is mathematically 'Buying the Top'
+            if 'upper_bb' in curr and curr['close'] > curr['upper_bb']:
+                return True, f"Price {curr['close']:.4f} > Upper BB (Volatilty Cap)"
+                
+            # 3. Parabolic Extension (EMA)
+            # If price is 12% away from EMA 50, it's vertical.
+            if 'ema_50' in curr and curr['ema_50'] > 0:
+                extension = (curr['close'] / curr['ema_50']) - 1.0
+                if extension > 0.12: # 12% above EMA50
+                    return True, f"Parabolic Extension ({extension*100:.1f}% > 12%)"
+            
+            return False, "OK"
+            
+        except Exception as e:
+            logger.error(f"Exhaustion Check Logic Failed: {e}")
+            return False, "Error"
 
 if __name__ == "__main__":
     import os
