@@ -309,43 +309,50 @@ class MarketData:
             return None
         return None
         
-    async def get_market_trends(self, limit=20):
+    async def scan_top_volume(self, limit=30):
         """
-        Get Top Gainers (Market Trends) regardless of Volume.
-        User Requirement: 'Trends of the day even if Vol < 10M'
+        [EMPIRICAL ENGINE]
+        Fetches the Top N pairs by Quote Volume (USDT).
+        Philosophy: 'Follow the Liquidity'.
+        The Calibration Manager will decide WHICH of these are tradable.
         """
         try:
+            # 1. Fetch 24hr Ticker Stats
+            # Using v1 endpoint which is standard for ranking
             resp = self.session.get(f"{self.base_url}/fapi/v1/ticker/24hr", timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
                 valid_pairs = []
+                
                 for x in data:
+                    # Filter: USDT Futures Only
                     if not x['symbol'].endswith('USDT'): continue
+                    
                     try:
-                        change = float(x['priceChangePercent'])
-                        # Valid Trend: Positive momentum or High Volatility
-                        # Minimal filter to avoid dead coins, but allow low cap runners
-                        if abs(change) < 3.0: continue # Skip stable coins/boring
+                        vol = float(x['quoteVolume'])
+                        # Minimal Liquidity Filter (Avoid zombie coins)
+                        if vol < 5000000: continue 
                         
                         valid_pairs.append(x)
                     except: continue
 
-                # Sort by % Change (Gainers First)
-                valid_pairs.sort(key=lambda x: float(x['priceChangePercent']), reverse=True)
+                # 2. Sort by Volume DESC (Highest Liquidity First)
+                valid_pairs.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
                 
-                return [x['symbol'] for x in valid_pairs[:limit]]
+                # 3. Return Top N logic
+                top_symbols = [x['symbol'] for x in valid_pairs[:limit]]
+                
+                # logger.info(f"📊 Empirical Scan: Identified Top {len(top_symbols)} Volume Leaders.")
+                return top_symbols
+                
         except Exception as e:
-            logger.error(f"Failed to fetch Gainers: {e}")
+            logger.error(f"Failed to scan Top Volume: {e}")
             return []
 
     async def get_top_gainers(self, limit=20):
-        """Fetch Top Gaining Pairs (Vol > 5M)"""
+        # Legacy/Backup: Still useful for 'Top Hunter' if needed, 
+        # but Empirical Engine mostly ignores this.
         return await self._get_ranked_pairs(rank_by='priceChangePercent', limit=limit, min_vol=5000000)
-
-    async def get_top_volume_pairs(self, limit=50, min_vol=None):
-        """Fetch Top Volume Pairs"""
-        volume_threshold = min_vol if min_vol is not None else config.MIN_VOLUME_USDT
-        return await self._get_ranked_pairs(rank_by='quoteVolume', limit=limit, min_vol=volume_threshold)
 
     async def _get_ranked_pairs(self, rank_by='quoteVolume', limit=20, min_vol=1000000):
         """Generic Ranking Helper"""

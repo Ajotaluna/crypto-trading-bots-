@@ -173,33 +173,12 @@ class TrendBot:
                     last_maintenance = now
                     last_discovery = now # Reset discovery timer
                     
-                # --- PRIORITY 2: REACTIVE DISCOVERY (Every 10 Mins) ---
-                elif now - last_discovery > 600:
-                    logger.info("🔭 REACTIVE DISCOVERY: Scanning for New Trends...")
-                    
-                    # 1. Get Top Trending Gainers
-                    gainers = await self.market.get_top_gainers(limit=20)
-                    
-                    # 2. Filter: Only NEW pairs not in current list
-                    unknowns = [s for s in gainers if s not in self.active_trading_list]
-                    
-                    if unknowns:
-                        logger.info(f"⚡ NEW TRENDS DETECTED: {unknowns} -> Calibrating Incrementally...")
-                        loop = asyncio.get_running_loop()
+                # --- PRIORITY 2: MONITORING (Standard) ---
+                # REACTIVE DISCOVERY REMOVED [Empirical Engine]
+                # We do not chase pumps anymore. We wait for the 4H Cycle.
+                pass
                         
-                        # Run Calibration with RESET=FALSE (Append Mode)
-                        # This adds winners to the existing list in memory/disk
-                        await loop.run_in_executor(
-                             self.executor,
-                             self.calibrator.calibrate,
-                             unknowns,
-                             False # RESET LISTS = FALSE (Incremental)
-                        )
-                        # Live Sync in Scanner Loop will pick these up automatically!
-                    else:
-                        logger.info("🔭 No new trends found.")
-                        
-                    last_discovery = now
+                last_discovery = now # Keep timer ticking but do nothing
 
                 await asyncio.sleep(60) # Check timers every minute
                 
@@ -210,25 +189,16 @@ class TrendBot:
 
     async def scan_market_candidates(self, full_scan=True):
         """
-        Sourcing Candidates.
-        Full Scan: Top Volume (50) + Top Gainers (20)
-        Quick Scan: Top Gainers (20) only
+        [EMPIRICAL ENGINE]
+        Sourcing Candidates via Volume (Liquidity).
         """
-        candidates = set()
-        
         try:
-            # 1. Trending (Gainers) - Always Run
-            gainers = await self.market.get_top_gainers(limit=20)
-            candidates.update(gainers)
+            # Always get Top Volume (The Engine requires High Liquidity)
+            # Replaces the old get_top_volume_pairs / get_top_gainers mix
+            candidates = await self.market.scan_top_volume(limit=30)
             
-            # 2. Volume - Only on Full Scan (Weekly Tokyo Reset)
-            # Requirement: Volume > 10M
-            if full_scan:
-                vol_pairs = await self.market.get_top_volume_pairs(limit=50, min_vol=10000000)
-                candidates.update(vol_pairs)
-                
-            logger.info(f"🔎 Scanned Market. Found {len(candidates)} unique candidates.")
-            return list(candidates)
+            logger.info(f"🔎 Empirical Scan: Found {len(candidates)} High Volume Candidates.")
+            return candidates
             
         except Exception as e:
             logger.error(f"Market Scan Failed: {e}")

@@ -233,9 +233,9 @@ class CalibrationManager:
         current_time = time.time()
         expiry_seconds = self.calib_settings.get('license_expiry_hours', 4) * 3600
         
-        # Load Thresholds
-        min_pnl = float(self.calib_settings.get('min_pnl_pct', 10.0))
-        min_wr = float(self.calib_settings.get('min_win_rate', 40.0))
+        # Load Thresholds (SNIPER MODE DEFAULTS)
+        min_pnl = float(self.calib_settings.get('min_pnl_pct', 15.0))  # Augmented to 15%
+        min_wr = float(self.calib_settings.get('min_win_rate', 50.0))  # Augmented to 50% (Coinflip+)
         
         # 2. LIST MANAGEMENT (RESET vs INCREMENTAL)
         if reset_lists:
