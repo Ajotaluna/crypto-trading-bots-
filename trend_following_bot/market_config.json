@@ -14,7 +14,7 @@
     },
     "calibration_settings": {
         "limit": 6000,
-        "min_win_rate": 40.0,
-        "min_profit_pct": 10.0
+        "min_win_rate": 50.0,
+        "min_profit_pct": 15.0
     }
 }
