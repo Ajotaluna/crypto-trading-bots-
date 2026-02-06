@@ -1,13 +1,13 @@
 {
     "vip_majors": [],
+    "vip_grinders": [],
+    "vip_scalpers": [],
     "major_subgroups": {
         "stable_majors": []
     },
-    "vip_grinders": [],
     "grinder_subgroups": {
         "proven_winners": []
     },
-    "vip_scalpers": [],
     "scalper_subgroups": {
         "group_a": [],
         "group_b": []

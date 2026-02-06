@@ -343,6 +343,7 @@ class TrendBot:
                         # User: "No toda la lista en la que se incluyen los 50 pares..."
                         
                         if symbol in self.persistent_pairs:
+                            logger.info(f"🛡️ PROTECTED SKIP: {symbol} ADX {trend_score:.1f} < 20. Kept in list but ignored for entry.")
                             continue
                             
                         # GRACE PERIOD LOGIC (2 HOURS)
