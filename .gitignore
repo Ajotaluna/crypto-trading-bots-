@@ -26,3 +26,14 @@ porqueria.txt
 stats.json
 strategy_lab/
 trend_following_bot/strategy_lab/
+
+# Trend Following Bot - Non-Production
+trend_following_bot/nascent_scanner/
+trend_following_bot/legacy_backup/
+trend_following_bot/backtest_data/
+trend_following_bot/data_cache/
+
+trend_following_bot/main_backup.py
+trend_following_bot/test*.py
+trend_following_bot/*.md
+trend_following_bot/*.txt

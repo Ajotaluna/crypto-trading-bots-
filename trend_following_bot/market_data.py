@@ -8,6 +8,7 @@ import random
 import hmac
 import hashlib
 import time
+import json
 from urllib.parse import urlencode
 from datetime import datetime, timedelta
 import pandas as pd
@@ -309,90 +310,62 @@ class MarketData:
             return None
         return None
         
-    async def scan_top_volume(self, limit=30):
+    async def get_trading_universe(self):
         """
-        [EMPIRICAL ENGINE]
-        Fetches the Top N pairs by Quote Volume (USDT).
-        Philosophy: 'Follow the Liquidity'.
-        The Calibration Manager will decide WHICH of these are tradable.
+        [THE ORACLE]
+        Returns the VALID trading universe.
+        Priority:
+        1. whitelist.json (Exact Backtest Match ~148/297 pairs)
+        2. Fallback: Top 150 by Volume (if whitelist missing)
+        """
+        # 1. Try Whitelist
+        if os.path.exists("whitelist.json"):
+            try:
+                with open("whitelist.json", "r") as f:
+                    symbols = json.load(f)
+                if symbols and len(symbols) > 0:
+                    # logger.info(f"� Whitelist Loaded: {len(symbols)} pairs.")
+                    return symbols
+            except Exception as e:
+                logger.error(f"Failed to load whitelist.json: {e}")
+        
+        # 2. Fallback (The Old Way)
+        logger.warning("⚠️ Whitelist not found or empty. Fallback to Dynamic Volume Scan.")
+        return await self._scan_top_volume_fallback(limit=150)
+
+    async def _scan_top_volume_fallback(self, limit=150):
+        """
+        Scanning the market for liquidity (Fallback Mode).
         """
         try:
-            # 1. Fetch 24hr Ticker Stats
-            # Using v1 endpoint which is standard for ranking
             resp = self.session.get(f"{self.base_url}/fapi/v1/ticker/24hr", timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
                 valid_pairs = []
-                
                 for x in data:
-                    # Filter: USDT Futures Only
                     if not x['symbol'].endswith('USDT'): continue
-                    
                     try:
                         vol = float(x['quoteVolume'])
-                        # Minimal Liquidity Filter (Avoid zombie coins)
                         if vol < 5000000: continue 
-                        
                         valid_pairs.append(x)
                     except: continue
 
-                # 2. Sort by Volume DESC (Highest Liquidity First)
                 valid_pairs.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
-                
-                # 3. Return Top N logic
-                top_symbols = [x['symbol'] for x in valid_pairs[:limit]]
-                
-                # logger.info(f"📊 Empirical Scan: Identified Top {len(top_symbols)} Volume Leaders.")
-                return top_symbols
-                
-        except Exception as e:
-            logger.error(f"Failed to scan Top Volume: {e}")
-            return []
-
-    async def get_top_gainers(self, limit=20):
-        # Legacy/Backup: Still useful for 'Top Hunter' if needed, 
-        # but Empirical Engine mostly ignores this.
-        return await self._get_ranked_pairs(rank_by='priceChangePercent', limit=limit, min_vol=5000000)
-
-    async def _get_ranked_pairs(self, rank_by='quoteVolume', limit=20, min_vol=1000000):
-        """Generic Ranking Helper"""
-
-        try:
-            resp = self.session.get(f"{self.base_url}/fapi/v1/ticker/24hr", timeout=10)
-            if resp.status_code == 200:
-                data = resp.json()
-                valid_pairs = []
-                
-                for x in data:
-                    if not x['symbol'].endswith('USDT'): continue
-                    try:
-                        vol = float(x['quoteVolume'])
-                        if vol < min_vol: continue
-                        
-                        # Add value for sorting
-                        x['_rank_val'] = float(x[rank_by])
-                        
-                        valid_pairs.append(x)
-                    except: continue
-
-                # Sort
-                valid_pairs.sort(key=lambda x: x['_rank_val'], reverse=True)
-                
                 return [x['symbol'] for x in valid_pairs[:limit]]
         except Exception as e:
-            logger.error(f"Ranking Error: {e}")
+            logger.error(f"Fallback Scan Failed: {e}")
             return []
-            
-    # Alias for backward compatibility if needed
-    async def get_top_symbols(self, limit=50):
-        return await self.get_top_volume_pairs(limit)
 
-    async def get_klines(self, symbol, interval='15m', limit=100, start_time=None):
+    # Wrapper for backward compatibility if needed, but confusing. Removed.
+
+    async def get_klines(self, symbol, interval='15m', limit=100, start_time=None, end_time=None):
         """Fetch candlestick data (Non-Blocking)"""
         url = f"{self.base_url}/fapi/v1/klines"
         params = {'symbol': symbol, 'interval': interval, 'limit': limit}
         if start_time:
              params['startTime'] = start_time
+        if end_time:
+             params['endTime'] = end_time
         
         loop = asyncio.get_running_loop()
         
@@ -468,132 +441,11 @@ class MarketData:
             
         data = await loop.run_in_executor(None, _fetch)
         return data
-    async def get_market_breadth(self, limit=50):
-        """
-        THE WATCHTOWER: Analyze Market Breadth (Bull/Bear Ratio).
-        Fetches Top 'limit' coins and checks 1H Trend (Price > EMA20).
-        Returns: { 'bullish_pct': float, 'sentiment': str, 'btc_trend': str }
-        """
-        try:
-             # 1. Get Top Symbols
-             symbols = await self.get_top_symbols(limit=limit)
-             if not symbols: return {'bullish_pct': 50.0, 'sentiment': 'NEUTRAL', 'btc_trend': 'NEUTRAL'}
-             
-             # 2. Fetch 1H Data in Parallel
-             # We need just enough candles for EMA20 (e.g. 30)
-             tasks = [self.get_klines(sym, '1h', limit=30) for sym in symbols]
-             results = await asyncio.gather(*tasks)
-             
-             bull_count = 0
-             total_valid = 0
-             
-             for df in results:
-                 if df.empty or len(df) < 20: continue
-                 
-                 # Calc EMA 20
-                 close = df['close']
-                 ema_20 = close.ewm(span=20, adjust=False).mean().iloc[-1]
-                 current = close.iloc[-1]
-                 
-                 if current > ema_20:
-                     bull_count += 1
-                 total_valid += 1
-                 
-             if total_valid == 0: return {'bullish_pct': 50.0, 'sentiment': 'NEUTRAL'}
-             
-             bullish_pct = (bull_count / total_valid) * 100
-             
-             sentiment = 'NEUTRAL'
-             if bullish_pct > 60: sentiment = 'BULLISH'
-             if bullish_pct > 80: sentiment = 'EUPHORIC'
-             if bullish_pct < 40: sentiment = 'BEARISH'
-             if bullish_pct < 20: sentiment = 'PANIC'
-             
-             return {
-                 'bullish_pct': bullish_pct,
-                 'sentiment': sentiment,
-                 'total': total_valid
-             }
-        except Exception as e:
-             logger.error(f"Breadth check failed: {e}")
-             return {'bullish_pct': 50.0, 'sentiment': 'NEUTRAL'}
+    
+    # --- CRASH DETECTION LOGIC MOVED TO SENTIMENT ANALYZER (Removed legacy functions here) ---
 
-    async def get_top_long_short_ratio(self, symbol, period='1h'):
-        """Get Top Traders Long/Short Ratio (Accounts)"""
-        url = f"{self.base_url}/fapi/v1/topLongShortAccountRatio"
-        params = {'symbol': symbol, 'period': period, 'limit': 30}
-        
-        loop = asyncio.get_running_loop()
-        def _fetch():
-            try:
-                r = self.session.get(url, params=params, timeout=10)
-                if r.status_code == 200: return r.json()
-            except: pass
-            return []
-            
-        return await loop.run_in_executor(None, _fetch)
 
-    async def get_global_long_short_ratio(self, symbol, period='1h'):
-        """Get Global Long/Short Ratio (The Crowd)"""
-        url = f"{self.base_url}/fapi/v1/globalLongShortAccountRatio"
-        params = {'symbol': symbol, 'period': period, 'limit': 30}
-        
-        loop = asyncio.get_running_loop()
-        def _fetch():
-            try:
-                r = self.session.get(url, params=params, timeout=10)
-                if r.status_code == 200: return r.json()
-            except: pass
-            return []
-            
-        return await loop.run_in_executor(None, _fetch)
-
-    # --- CRASH DETECTION LOGIC MOVED TO SENTIMENT ANALYZER (Keep simple here) ---
-    async def get_btc_trend_status(self):
-        """
-        Check BTCUSDT Trend (Legacy + Sentiment Wrapper needed in Main).
-        Returns: 'BULLISH', 'BEARISH', 'CRASH', or 'NEUTRAL'
-        """
-        # 1. Check 15m (Immediate Danger)
-        df_15m = await self.get_klines('BTCUSDT', interval='15m', limit=50)
-        if df_15m.empty: return 'NEUTRAL' # Assume Check failed
-        
-        # Simple EMA calculation
-        df_15m['ema_20'] = df_15m['close'].ewm(span=20, adjust=False).mean()
-        current_15m = df_15m.iloc[-1]
-        
-        # Calculate RSI for Crash Detection
-        delta = df_15m['close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        current_rsi = rsi.iloc[-1]
-        
-        # Calculate % Drop in last candle
-        open_price = float(current_15m['open'])
-        close_price = float(current_15m['close'])
-        pct_change = (close_price - open_price) / open_price * 100
-        
-        # CRASH DETECTION: Drop > 1% in 15m OR RSI < 25 (Panic)
-        if pct_change < -1.0 or current_rsi < 25:
-             return 'CRASH'
-
-        # DANGER: BTC dumping on 15m (Standard Downtrend)
-        if current_15m['close'] < current_15m['ema_20']:
-            return 'BEARISH'
-            
-        # 2. Check 1H (General Health)
-        df_1h = await self.get_klines('BTCUSDT', interval='1h', limit=50)
-        if not df_1h.empty:
-            df_1h['ema_20'] = df_1h['close'].ewm(span=20, adjust=False).mean()
-            current_1h = df_1h.iloc[-1]
-            if current_1h['close'] > current_1h['ema_20']:
-                return 'BULLISH'
-                
-        return 'NEUTRAL'
-
-    def calculate_position_size(self, symbol, entry_price, sl_price, override_risk_pct=None):
+    def calculate_position_size(self, symbol, entry_price, sl_price, override_risk_pct=None, override_leverage=None):
         """
         THE RISK VAULT: Calculate Position Size based on Risk %.
         Formula: Size = (Balance * Risk%) / Distance%
@@ -606,7 +458,16 @@ class MarketData:
              risk_pct = override_risk_pct
         
         # 2. Calculate Risk Amount (e.g. 1% of $1000 = $10)
-        risk_amount = self.balance * (risk_pct / 100)
+        risk_amount = self.balance * (risk_pct) # override_risk_pct is usually 0.01 (decimal), config might be 1.0 (percent)
+        # WAIT: config.RISK_PER_TRADE_PCT is likely 1.0 (percent).
+        # Strategy RISK_PER_ENTRY is 0.01 (decimal).
+        # We need to normalize.
+        if override_risk_pct is not None:
+             # Strategy passes decimal (0.01)
+             risk_amount = self.balance * override_risk_pct
+        else:
+             # Config passes percent (1.0)
+             risk_amount = self.balance * (risk_pct / 100)
         
         # 2. Calculate Stop Loss Distance %
         dist_pct = abs(entry_price - sl_price) / entry_price
@@ -618,13 +479,19 @@ class MarketData:
         position_size_usdt = risk_amount / dist_pct
         
         # 4. Apply Safety Caps
-        max_position_usdt = self.balance * (config.MAX_CAPITAL_PER_TRADE_PCT / 100) * config.LEVERAGE 
-        # Note: Max Cap is usually unleveraged % of balance, but here we cap the Notional.
-        # Let's cap the MARGIN used to 25% of balance.
-        # Margin Used = Position / Leverage
+        leverage = config.LEVERAGE
+        if override_leverage is not None: leverage = override_leverage
+            
+        # Max Margin = 10% of Balance (Default)
+        # If strategy says MAX_CAPITAL_PER_TRADE = 0.10 (decimal), it means 10% of equity per trade (Margin? Or Notional?)
+        # Strategy: MAX_CAPITAL_PER_TRADE = 0.10. 
+        # Usually implies Max Margin allocated per trade.
+        
+        # New Logic using Strategy Constant if available (we don't pass MAX_CAPITAL_PER_TRADE here yet)
+        # For now, rely on LEVERAGE override for Notional Cap.
         
         max_margin = self.balance * (config.MAX_CAPITAL_PER_TRADE_PCT / 100)
-        max_allowed_notional = max_margin * config.LEVERAGE
+        max_allowed_notional = max_margin * leverage
         
         if position_size_usdt > max_allowed_notional:
             logger.warning(f"⚠️ RISK VAULT: Capping Position for {symbol}. Needed {position_size_usdt:.2f} but capped at {max_allowed_notional:.2f}")
@@ -640,8 +507,13 @@ class MarketData:
             ohlcv = await self.get_klines(symbol, interval='15m', limit=100)
             if ohlcv is None or ohlcv.empty: return 0.0
             
-            from technical_analysis import TechnicalAnalysis
-            df = TechnicalAnalysis.calculate_indicators(ohlcv)
+            # from technical_analysis import TechnicalAnalysis
+            # df = TechnicalAnalysis.calculate_indicators(ohlcv)
+            
+            # USE NEW STRATEGY INDICATORS
+            from trading_strategy import calculate_indicators
+            df = calculate_indicators(ohlcv)
+            
             if 'adx' in df.columns:
                 return df['adx'].iloc[-1]
             return 0.0
