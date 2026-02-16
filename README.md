@@ -3,79 +3,111 @@
 Este repositorio contiene un robot de trading automatizado de seguimiento de tendencias para Binance Futures.
 
 ## Características
-- Estrategia de Trend Following con gestión de riesgos (Titan).
-- Escáner de mercado global.
-- Ejecución segura de órdenes.
-- Contenedorizado con Docker para fácil despliegue.
 
----
+*   **Estrategia:** Trend Following con gestión de riesgos (Titan) y filtros avanzados (Kalman, Entropía).
+*   **Seguridad:** Gestión de riesgos centralizada (RiskManager) y topes de margen.
+*   **Universo:** Whitelist validada de ~297 pares (`whitelist.json`).
+*   **Despliegue:** Contenedorizado con Docker para fácil despliegue en cualquier VPS.
 
 ## 🚀 Instalación y Despliegue
 
-### Requisitos Previo
-- Cuenta en Binance Futures.
-- API Key y Secret (con permisos de Futuros).
-- Servidor VPS (Ubuntu recomendado) o máquina local con Docker.
+### Requisitos Previos
 
-### 1. Instalación Rápida (AWS / Ubuntu)
-Ejecuta el script de despliegue automático:
+*   Cuenta en Binance Futures.
+*   API Key y Secret (con permisos de Futuros).
+*   Servidor VPS (Ubuntu recomendado) o máquina local con Docker.
+
+### 1. Clonar el repositorio
+
 ```bash
-wget https://raw.githubusercontent.com/Ajotaluna/crypto-trading-bots-/main/deploy.sh
-chmod +x deploy.sh
-./deploy.sh
+git clone https://github.com/Ajotaluna/crypto-trading-bots-.git
+cd crypto-trading-bots-
 ```
 
-### 2. Configuración y Ejecución
+### 2. Configuración (Variables de Entorno)
 
-#### Opción Recomendada: Docker Compose
-1. Crea un archivo `.env` en la raíz del proyecto:
-   ```bash
-   API_KEY=tu_api_key_aqui
-   API_SECRET=tu_api_secret_aqui
-   # Opcional: DRY_RUN=true con dinero ficticio (por defecto es false/real si no se pone)
-   ```
+Crea un archivo `.env` en la raíz del proyecto para guardar tus claves de forma segura:
 
-2. Arranca el bot:
-   ```bash
-   sudo docker-compose up -d
-   ```
+```env
+API_KEY=tu_api_key_aqui
+API_SECRET=tu_api_secret_aqui
+DRY_RUN=false
+# DRY_RUN=true para modo simulación (sin dinero real)
+```
 
-3. Ver logs:
-   ```bash
-   sudo docker-compose logs -f
-   ```
+---
 
-#### Opción Manual: Docker Run
+### Opción A: Ejecución con Docker (Recomendada)
+
+**Paso 1: Construir la imagen**
 ```bash
-sudo docker run -d --restart=always --name trend-bot \
-  -e API_KEY='TU_API_KEY' \
-  -e API_SECRET='TU_API_SECRET' \
+docker build -t crypto-bot .
+```
+
+**Paso 2: Ejecutar el contenedor**
+```bash
+docker run -d --restart=always --name trend-bot \
+  --env-file .env \
   -v $(pwd)/data_cache:/app/data_cache \
   crypto-bot
 ```
 
+**Ver logs:**
+```bash
+docker logs -f trend-bot
+```
+
+**Detener:**
+```bash
+docker stop trend-bot
+```
+
 ---
 
-## 🛠 Comandos de Mantenimiento
+### Opción B: Ejecución Manual (Python)
 
-**Detener el bot:**
-```bash
-sudo docker-compose down
-# O si usaste docker run:
-# sudo docker stop trend-bot
-```
+Si prefieres no usar Docker:
 
-**Actualizar a la última versión:**
-```bash
-git pull
-sudo docker-compose build
-sudo docker-compose up -d
-```
+1.  **Instalar dependencias:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+2.  **Ejecutar:**
+    ```bash
+    # Exportar variables primero (Linux/Mac)
+    export API_KEY='tu_api_key'
+    export API_SECRET='tu_api_secret'
+    
+    # Ejecutar en segundo plano con nohup
+    nohup python trend_following_bot/main.py > bot.log 2>&1 &
+    
+    # Ver logs
+    tail -f bot.log
+    ```
 
 ---
 
 ## 📂 Estructura del Proyecto
-- `trend_following_bot/`: Código fuente principal.
-- `data_cache/`: Datos persistentes (calibración, estado).
-- `_legacy_archive/`: Código antiguo/archivado (no utilizado).
-- `Dockerfile` y `docker-compose.yml`: Configuración de contenedorización.
+
+*   `trend_following_bot/`: Código fuente principal.
+    *   `main.py`: Punto de entrada y bucle principal.
+    *   `trading_strategy.py`: Lógica de trading (Indicadores, Entradas, Riesgo).
+    *   `market_data.py`: Interacción con Binance API.
+    *   `config.py`: Configuración del bot.
+    *   `whitelist.json`: Universo de pares permitidos.
+*   `data_cache/`: Datos persistentes (calibración, estado).
+*   `nascent_scanner/`: Herramientas de Backtesting e Investigación.
+*   `Dockerfile`: Configuración de la imagen Docker.
+
+## 🛠 Mantenimiento
+
+**Actualizar a la última versión:**
+
+```bash
+git pull
+# Si usas Docker, reconstruye la imagen:
+docker build -t crypto-bot .
+docker stop trend-bot && docker rm trend-bot
+# Vuelve a ejecutar el comando 'docker run' de arriba
+```
