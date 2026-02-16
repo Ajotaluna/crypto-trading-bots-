@@ -4,6 +4,7 @@ Handles data fetching and simulation.
 """
 import asyncio
 import logging
+import os
 import random
 import hmac
 import hashlib
