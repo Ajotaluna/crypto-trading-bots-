@@ -482,3 +482,27 @@ class TrendBot:
              s = await self.market.get_real_account_status()
              return s['equity'] if s else self.market.balance
         return self.market.balance
+
+# ================================================================
+# EXECUTION ENTRY POINT (Docker / Cloud Support)
+# ================================================================
+if __name__ == "__main__":
+    # Load Environment Variables (Standard for Cloud)
+    api_key = os.getenv('API_KEY', '')
+    api_secret = os.getenv('API_SECRET', '')
+    is_dry_run = os.getenv('DRY_RUN', 'true').lower() == 'true'
+
+    if not api_key or not api_secret:
+        if not is_dry_run:
+            logging.error("❌ MISSING API KEYS! Set API_KEY and API_SECRET env vars.")
+            sys.exit(1)
+            
+    try:
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        bot = TrendBot(is_dry_run=is_dry_run, api_key=api_key, api_secret=api_secret)
+        asyncio.run(bot.start())
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        logging.error(f"Fatal Error: {e}")
+        sys.exit(1)
