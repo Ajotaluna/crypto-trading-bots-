@@ -535,6 +535,58 @@ class MarketData:
         except Exception as e:
             logger.warning(f"Failed to clear orders for {symbol}: {e}")
 
+    async def update_sl(self, symbol, new_sl):
+        """
+        Updates the Stop Loss for an open position.
+        Strategy: Cancel existing SL, Place new STOP_MARKET.
+        """
+        try:
+            if symbol not in self.positions:
+                logger.warning(f"⚠️ Cannot update SL for {symbol}: Position not tracked.")
+                return
+
+            pos = self.positions[symbol]
+            
+            # 1. Round Price
+            info = await self._get_symbol_precision(symbol)
+            if not info: info = {'p': 0.01}
+            tick_size = info['p']
+            new_sl = self._round_price(new_sl, tick_size)
+            
+            if self.is_dry_run:
+                # Mock Update
+                pos['sl'] = new_sl
+                # logger.info(f"✅ [MOCK] SL Update {symbol} -> {new_sl}")
+                return
+
+            # REAL UPDATE
+            # 2. Cancel Old Orders (Blanket Cancel)
+            await self.cancel_open_orders(symbol)
+            
+            # 3. Place New SL
+            # SL for LONG = SELL STOP_MARKET
+            # SL for SHORT = BUY STOP_MARKET
+            side = pos['side']
+            sl_side = 'SELL' if side == 'LONG' else 'BUY'
+            
+            params = {
+                'symbol': symbol,
+                'side': sl_side,
+                'type': 'STOP_MARKET',
+                'stopPrice': f"{new_sl}",
+                'closePosition': 'true' # Binance Specific: Closes position at this price
+            }
+            
+            res = await self._signed_request('POST', '/fapi/v1/order', params)
+            if res:
+                 logger.info(f"✅ SL Updated on Exchange: {symbol} @ {new_sl}")
+                 pos['sl'] = new_sl
+            else:
+                 logger.error(f"❌ Failed to update SL for {symbol} (API Rejected)")
+                 
+        except Exception as e:
+            logger.error(f"SL Update Error {symbol}: {e}")
+
     async def open_position(self, symbol, side, amount_usdt, sl_price, tp_price):
         """Open position (Mock or Real)"""
         # 0. Safety First: Clear checks
