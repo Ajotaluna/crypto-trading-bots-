@@ -18,6 +18,8 @@ from blacklist_manager import BlacklistManager
 
 # NEW IMPORTS (The "New Brain")
 from scanner_anomaly import AnomalyScanner
+# NEW: Import PID Manager
+from trading_strategy import PositionManager
 from trading_strategy import (
     confirm_entry, 
     calculate_indicators, 
@@ -44,58 +46,7 @@ from trading_strategy import (
 
 # ... (rest of imports)
 
-async def manage_positions(self):
-        """
-        Manages active positions using RiskManager from Strategy File.
-        """
-        for symbol, pos in list(self.market.positions.items()):
-            current_price = await self.market.get_current_price(symbol)
-            if current_price == 0: continue
-            
-            # 1. Get Trend Data (ATR)
-            try:
-                df = await self.market.get_klines(symbol, interval='15m', limit=20)
-                if df.empty: continue
-                
-                # Simple ATR calc if not present
-                high = df['high'].astype(float)
-                low = df['low'].astype(float)
-                close = df['close'].astype(float)
-                tr = pd.concat([
-                    high - low,
-                    (high - close.shift(1)).abs(),
-                    (low - close.shift(1)).abs()
-                ], axis=1).max(axis=1)
-                atr = tr.rolling(14).mean().iloc[-1]
-            except Exception:
-                atr = 0
 
-            # 2. DELEGATE TO STRATEGY FILE (Risk Manager)
-            action, new_value, reason = RiskManager.check_exit_conditions(pos, current_price, atr)
-            
-            if action == 'CLOSE':
-                logger.warning(f"🛑 EXIT TRIGGER: {symbol} | Reason: {reason}")
-                await self.market.close_position(symbol, reason)
-                continue # Moved to next position
-                
-            elif action == 'UPDATE_SL':
-                if new_value != pos['sl']:
-                    pos['sl'] = new_value
-                    if reason == 'BE_LOCK':
-                        pos['be_locked'] = True
-                        logger.info(f"🛡️ BE LOCKED: {symbol} (Strategy Logic)")
-            
-            # 3. MAX HOLD TIME CHECK (Strategy Replication)
-            # Strategy: Exit after MAX_HOLD_CANDLES (96 * 15m = 24h)
-            entry_time = pos.get('entry_time')
-            if entry_time:
-                # Calculate elapsed time
-                elapsed = datetime.now() - entry_time
-                max_hold_time = timedelta(minutes=MAX_HOLD_CANDLES * 15)
-                
-                if elapsed > max_hold_time:
-                    logger.warning(f"⏳ MAX HOLD EXPIRED: {symbol} held for {elapsed}. Closing.")
-                    await self.market.close_position(symbol, "MAX_HOLD_TIME")
 
 # Setup logging
 if not os.path.exists('logs'):
@@ -385,35 +336,35 @@ class TrendBot:
                 logger.error(f"Safety Loop Error: {e}")
                 await asyncio.sleep(5)
 
+
     async def manage_positions(self):
         """
-        Manages active positions with High Win Rate Logic:
-        - Hard SL/TP checks.
-        - BE Lock at 1.5 ATR.
-        - Trailing Stop at 2.0 ATR (Dynamic).
+        Manages active positions using PID Controller Logic (Inline).
+        Matches Backtest 'PositionManager' behavior.
         """
         for symbol, pos in list(self.market.positions.items()):
             current_price = await self.market.get_current_price(symbol)
             if current_price == 0: continue
             
-            # 1. Get Trend Data (ATR) for Management
+            # 1. Get Trend Data (ATR & Kalman)
             try:
                 # We need fresh ATR for dynamic trailing
-                df = await self.market.get_klines(symbol, interval='15m', limit=20)
+                df = await self.market.get_klines(symbol, interval='15m', limit=50)
                 if df.empty: continue
                 
-                # Simple ATR calc if not present
-                high = df['high'].astype(float)
-                low = df['low'].astype(float)
-                close = df['close'].astype(float)
-                tr = pd.concat([
-                    high - low,
-                    (high - close.shift(1)).abs(),
-                    (low - close.shift(1)).abs()
-                ], axis=1).max(axis=1)
-                atr = tr.rolling(14).mean().iloc[-1]
-            except Exception:
-                atr = 0
+                # Calculate Indicators (Need Kalman & ATR)
+                from trading_strategy import calculate_indicators, PIDController
+
+                loop = asyncio.get_running_loop()
+                df = await loop.run_in_executor(self.executor, calculate_indicators, df)
+                
+                # Extract metrics
+                atr = df['atr'].iloc[-1]
+                kf_price = df['kf_price'].iloc[-1]
+                
+            except Exception as e:
+                logger.error(f"Data Error {symbol}: {e}")
+                continue
 
             # 2. Hard Stop Checks (Safety Net)
             is_sl = False
@@ -427,35 +378,68 @@ class TrendBot:
                 await self.market.close_position(symbol, "STOP LOSS")
                 continue
 
-            # 3. Dynamic Trailing Logic (if ATR available)
-            if atr > 0:
-                pnl_atr = ((current_price - pos['entry_price']) if pos['side'] == 'LONG' else (pos['entry_price'] - current_price)) / atr
+            # 3. PID DYNAMIC TRAILING LOGIC
+            # Use self.pos_manager as the state holder
+            if not hasattr(self, 'pos_manager'):
+                 self.pos_manager = type('obj', (object,), {'positions': {}})()
+
+            if symbol not in self.pos_manager.positions:
+                 self.pos_manager.positions[symbol] = {
+                     'pid': None 
+                 }
+                 
+            pm_pos = self.pos_manager.positions[symbol]
+            
+            # Init PID if missing
+            if not pm_pos.get('pid'):
+                # Kp=0.5, Ki=0.1, Kd=0.1 (Standard Tuning)
+                pm_pos['pid'] = PIDController(Kp=0.5, Ki=0.1, Kd=0.1)
                 
-                # BE LOCK (1.5 ATR)
-                if pnl_atr >= 1.5 and not pos.get('be_locked', False):
-                    buffer = current_price * 0.001
-                    new_sl = pos['entry_price'] + buffer if pos['side'] == 'LONG' else pos['entry_price'] - buffer
-                    pos['sl'] = new_sl
-                    pos['be_locked'] = True
-                    logger.info(f"🛡️ BE LOCKED: {symbol} (+1.5 ATR)")
+            pid = pm_pos['pid']
+            
+            # Error Calculation: (Price - Kalman) / ATR
+            if pos['side'] == 'LONG':
+                error = (current_price - kf_price) / atr
+            else:
+                error = (kf_price - current_price) / atr
+                
+            # PID Update
+            adjustment = pid.update(error)
+            
+            # Base Trail Distance (2.0 ATR)
+            base_trail = 2.0 * atr
+            
+            # Dynamic Trail
+            calc_trail = base_trail - (adjustment * atr)
+            trail_dist = max(0.5 * atr, min(3.0 * atr, calc_trail))
+            
+            # Apply Trailing Stop
+            new_sl = pos['sl']
+            updated = False
+            
+            if pos['side'] == 'LONG':
+                potential_sl = current_price - trail_dist
+                # Only move SL UP
+                if potential_sl > pos['sl']:
+                    new_sl = potential_sl
+                    updated = True
+            else:
+                potential_sl = current_price + trail_dist
+                # Only move SL DOWN
+                if potential_sl < pos['sl']:
+                    new_sl = potential_sl
+                    updated = True
                     
-                # TRAILING (2.0 ATR) - Only active after some profit or always? 
-                # Strategy says "Trail 2.0 ATR".
-                # If we trail immediately, we might choke the trade.
-                # Usually trail activates after BE or when deep in profit.
-                # Let's simple Trail if Locked.
-                if pos.get('be_locked', False):
-                    trail_dist = 2.0 * atr
-                    if pos['side'] == 'LONG':
-                        potential_sl = current_price - trail_dist
-                        if potential_sl > pos['sl']:
-                            pos['sl'] = potential_sl
-                            # logger.info(f"🪜 TRAIL UPDATE: {symbol} to {pos['sl']:.4f}")
-                    else:
-                        potential_sl = current_price + trail_dist
-                        if potential_sl < pos['sl']:
-                            pos['sl'] = potential_sl
-                            # logger.info(f"🪜 TRAIL UPDATE: {symbol} to {pos['sl']:.4f}")
+            if updated and new_sl != pos['sl']:
+                await self.market.update_sl(symbol, new_sl)
+                # logger.info(f"🔄 PID TRAIL: {symbol} SL->{new_sl:.4f} (Err:{error:.2f})")
+                
+            # 4. Max Hold Time Check
+            entry_time = pos.get('entry_time')
+            if entry_time:
+                elapsed = datetime.now() - entry_time
+                if elapsed > timedelta(minutes=96*15): # 24h
+                     await self.market.close_position(symbol, "MAX_HOLD_TIME")
 
     async def reporting_loop(self):
         """Periodically reports status."""
