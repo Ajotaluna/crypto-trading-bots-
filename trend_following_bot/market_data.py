@@ -563,9 +563,10 @@ class MarketData:
             # 2. Cancel Old Orders (Blanket Cancel)
             await self.cancel_open_orders(symbol)
             
-            # 3. Place New SL
-            # SL for LONG = SELL STOP_MARKET
-            # SL for SHORT = BUY STOP_MARKET
+            # 3. Wait for exchange to process cancellation (prevents race condition)
+            await asyncio.sleep(0.5)
+            
+            # 4. Place New SL (with retry)
             side = pos['side']
             sl_side = 'SELL' if side == 'LONG' else 'BUY'
             
@@ -581,8 +582,19 @@ class MarketData:
             if res:
                  logger.info(f"✅ SL Updated on Exchange: {symbol} @ {new_sl}")
                  pos['sl'] = new_sl
+                 return True
             else:
-                 logger.error(f"❌ Failed to update SL for {symbol} (API Rejected)")
+                 # Retry once after 1s backoff
+                 logger.warning(f"⚠️ SL Update retry for {symbol}...")
+                 await asyncio.sleep(1.0)
+                 res = await self._signed_request('POST', '/fapi/v1/order', params)
+                 if res:
+                     logger.info(f"✅ SL Updated (retry): {symbol} @ {new_sl}")
+                     pos['sl'] = new_sl
+                     return True
+                 else:
+                     logger.error(f"❌ Failed to update SL for {symbol} (API Rejected x2)")
+                     return False
                  
         except Exception as e:
             logger.error(f"SL Update Error {symbol}: {e}")

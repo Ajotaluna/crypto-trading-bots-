@@ -280,6 +280,8 @@ class TrendBot:
                 'scale_level': 1,
                 'total_amount': margin,
                 'entry_price': curr_price,
+                'last_sl_update': 0,  # Timestamp of last SL update (cooldown)
+                'failed_sl_count': 0, # Consecutive failures counter
             }
 
     async def scale_into_position(self, symbol, direction, notional):
@@ -321,10 +323,10 @@ class TrendBot:
         while self.running:
             try:
                 await self.manage_positions()
-                await asyncio.sleep(1)
+                await asyncio.sleep(15)  # 15s interval (avoids API spam)
             except Exception as e:
                 logger.error(f"Safety Loop Error: {e}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(15)
 
     async def manage_positions(self):
         """
@@ -345,6 +347,8 @@ class TrendBot:
                     'scale_level': 1,
                     'total_amount': pos.get('amount', 0) * pos['entry_price'] / LEVERAGE,
                     'entry_price': pos['entry_price'],
+                    'last_sl_update': 0,
+                    'failed_sl_count': 0,
                 }
             
             state = self.pos_state[symbol]
@@ -439,7 +443,8 @@ class TrendBot:
                 else:
                     new_sl = state['avg_price'] - buffer
                 state['be_locked'] = True
-                await self.market.update_sl(symbol, new_sl)
+                result = await self.market.update_sl(symbol, new_sl)
+                state['last_sl_update'] = time.time()
                 logger.info(f"🔒 BE LOCK: {symbol} SL->{new_sl:.4f} (PnL: {pnl_atr:.1f} ATR)")
             
             # --- 4. PID DYNAMIC TRAILING (after BE lock ONLY, matches backtest) ---
@@ -450,16 +455,28 @@ class TrendBot:
                 current_trail_atr = TRAIL_DISTANCE_ATR + pid_adjust
                 current_trail_atr = max(0.5, min(4.0, current_trail_atr))
                 
+                # Calculate desired SL
                 if pos['side'] == 'LONG':
                     trail_sl = state['best_price'] - (atr * current_trail_atr)
-                    if trail_sl > pos['sl']:
-                        await self.market.update_sl(symbol, trail_sl)
-                        logger.debug(f"🔄 PID TRAIL: {symbol} SL->{trail_sl:.4f} (Adj:{pid_adjust:.2f})")
+                    should_update = trail_sl > pos['sl']
                 else:
                     trail_sl = state['best_price'] + (atr * current_trail_atr)
-                    if trail_sl < pos['sl']:
-                        await self.market.update_sl(symbol, trail_sl)
-                        logger.debug(f"🔄 PID TRAIL: {symbol} SL->{trail_sl:.4f} (Adj:{pid_adjust:.2f})")
+                    should_update = trail_sl < pos['sl']
+                
+                if should_update:
+                    # COOLDOWN: Don't spam SL updates (minimum 30s between updates)
+                    elapsed_since_update = time.time() - state.get('last_sl_update', 0)
+                    if elapsed_since_update < 30:
+                        continue
+                    
+                    # MINIMUM CHANGE: Only update if SL moves by at least 0.1%
+                    change_pct = abs(trail_sl - pos['sl']) / pos['sl'] * 100 if pos['sl'] > 0 else 999
+                    if change_pct < 0.1:
+                        continue
+                    
+                    await self.market.update_sl(symbol, trail_sl)
+                    state['last_sl_update'] = time.time()
+                    logger.info(f"🔄 PID TRAIL: {symbol} SL->{trail_sl:.4f} (Δ{change_pct:.2f}% | Adj:{pid_adjust:.2f})")
             
             # --- 5. MAX HOLD TIME (candle-equivalent via elapsed time) ---
             entry_time = pos.get('entry_time')
