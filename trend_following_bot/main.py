@@ -140,12 +140,15 @@ class TrendBot:
                     await asyncio.sleep(60)
                     continue
 
+                logger.info(f"🔍 MICRO SCAN: Checking {len(self.daily_watchlist)} watchlist picks | Open: {len(self.market.positions)}/{MAX_SIGNALS}")
+                
                 for pick in list(self.daily_watchlist):  # Copy for safe removal
                     symbol = pick['symbol']
                     direction = pick['direction']
                     
                     # Capacity Check
                     if len(self.market.positions) >= MAX_SIGNALS:
+                        logger.info(f"⛔ CAPACITY FULL: {len(self.market.positions)}/{MAX_SIGNALS} — skipping remaining picks")
                         break
                     
                     # Skip if already open
@@ -201,11 +204,13 @@ class TrendBot:
             logger.error(f"Macro Scan Error: {e}")
 
     async def check_micro_entry(self, symbol, direction, pick_info):
-        """Runs confirm_entry on the specific candidate."""
+        """Runs confirm_entry on the specific candidate with detailed logging."""
         try:
             limit = 100 
             df = await self.market.get_klines(symbol, interval='15m', limit=limit)
-            if df.empty: return
+            if df.empty:
+                logger.warning(f"📭 {symbol}: No klines data available")
+                return
 
             loop = asyncio.get_running_loop()
             df_indicators = await loop.run_in_executor(
@@ -213,6 +218,16 @@ class TrendBot:
                 calculate_indicators,
                 df
             )
+            
+            # Log indicator snapshot BEFORE confirm_entry
+            curr = df_indicators.iloc[-2]  # confirm_entry uses iloc[-2]
+            close_p = float(curr['close'])
+            kf_price = float(curr['kf_price'])
+            kf_slope = float(curr['kf_slope'])
+            entropy_val = float(curr['entropy'])
+            rsi_val = float(curr['rsi'])
+            atr_val = float(curr['atr'])
+            candle_color = 'GREEN' if close_p > float(curr['open']) else 'RED'
             
             is_valid = await loop.run_in_executor(
                 self.executor,
@@ -223,6 +238,7 @@ class TrendBot:
             
             if is_valid:
                 logger.info(f"✨ MICRO TRIGGER: {symbol} ({direction}) Confirmed!")
+                logger.info(f"   📈 Indicators: RSI={rsi_val:.1f} | Entropy={entropy_val:.3f} | KF_slope={kf_slope:.6f} | ATR={atr_val:.4f}")
                 
                 signal = {
                     'direction': direction,
@@ -232,6 +248,30 @@ class TrendBot:
                 }
                 
                 await self.execute_trade(symbol, signal, df_indicators)
+            else:
+                # Log WHY it was rejected
+                reject_reasons = []
+                if direction == 'LONG':
+                    if candle_color != 'GREEN': reject_reasons.append(f'Candle={candle_color}')
+                    if rsi_val > 72: reject_reasons.append(f'RSI_HIGH={rsi_val:.1f}')
+                    if rsi_val < 25: reject_reasons.append(f'RSI_LOW={rsi_val:.1f}')
+                    if close_p < kf_price: reject_reasons.append(f'BELOW_KALMAN(price={close_p:.4f}<kf={kf_price:.4f})')
+                    if kf_slope < 0: reject_reasons.append(f'KF_SLOPE_NEG={kf_slope:.6f}')
+                    if entropy_val > 0.78: reject_reasons.append(f'HIGH_ENTROPY={entropy_val:.3f}')
+                    if kf_price > 0 and atr_val > 0 and (close_p - kf_price) / atr_val > 3.0:
+                        reject_reasons.append(f'OVEREXTENDED={((close_p-kf_price)/atr_val):.1f}ATR')
+                else:  # SHORT
+                    if candle_color != 'RED': reject_reasons.append(f'Candle={candle_color}')
+                    if rsi_val < 18: reject_reasons.append(f'RSI_LOW={rsi_val:.1f}')
+                    if rsi_val > 75: reject_reasons.append(f'RSI_HIGH={rsi_val:.1f}')
+                    if close_p > kf_price: reject_reasons.append(f'ABOVE_KALMAN(price={close_p:.4f}>kf={kf_price:.4f})')
+                    if kf_slope > 0: reject_reasons.append(f'KF_SLOPE_POS={kf_slope:.6f}')
+                    if entropy_val > 0.78: reject_reasons.append(f'HIGH_ENTROPY={entropy_val:.3f}')
+                    if kf_price > 0 and atr_val > 0 and (kf_price - close_p) / atr_val > 3.0:
+                        reject_reasons.append(f'OVEREXTENDED={((kf_price-close_p)/atr_val):.1f}ATR')
+                
+                reasons_str = ', '.join(reject_reasons) if reject_reasons else 'UNKNOWN'
+                logger.info(f"❌ REJECTED: {symbol} ({direction}) | Reason: {reasons_str}")
                 
         except Exception as e:
             logger.error(f"Micro Scan Error {symbol}: {e}")
@@ -494,7 +534,7 @@ class TrendBot:
             self.pos_state.pop(s, None)
 
     async def reporting_loop(self):
-        """Periodically reports status."""
+        """Periodically reports comprehensive status."""
         while self.running:
              try:
                  total_equity = self.market.balance
@@ -503,16 +543,66 @@ class TrendBot:
                      if st: total_equity = st['equity']
                  
                  open_count = len(self.market.positions)
-                 logger.info(f"--- 📊 STATUS: Equity ${total_equity:.2f} | Open: {open_count} ---")
+                 wl_count = len(self.daily_watchlist)
+                 pnl_pct = ((total_equity - self.start_balance) / self.start_balance * 100) if self.start_balance > 0 else 0
+                 
+                 logger.info(f"{'='*60}")
+                 logger.info(f"📊 STATUS | Equity: ${total_equity:.2f} | Daily PnL: {pnl_pct:+.2f}% | Open: {open_count}/{MAX_SIGNALS} | Watchlist: {wl_count}")
+                 
                  if open_count > 0:
                      for s, p in self.market.positions.items():
-                         state_info = ""
+                         # Get current price for PnL calc
+                         try:
+                             curr_price = await self.market.get_current_price(s)
+                         except:
+                             curr_price = p['entry_price']
+                         
+                         # Calculate live PnL
+                         if p['side'] == 'LONG':
+                             live_pnl_pct = (curr_price - p['entry_price']) / p['entry_price'] * 100
+                         else:
+                             live_pnl_pct = (p['entry_price'] - curr_price) / p['entry_price'] * 100
+                         
+                         # Elapsed time
+                         entry_time = p.get('entry_time')
+                         if entry_time:
+                             elapsed = datetime.now() - entry_time
+                             elapsed_str = f"{elapsed.total_seconds()/3600:.1f}h"
+                             candles = int(elapsed.total_seconds() / 900)  # 15m candles
+                         else:
+                             elapsed_str = "?h"
+                             candles = 0
+                         
+                         # State info
+                         state_str = ""
                          if s in self.pos_state:
                              st = self.pos_state[s]
-                             state_info = f" | BE:{'✅' if st['be_locked'] else '❌'} | Scale:{st['scale_level']}"
-                         logger.info(f"   > {s} ({p['side']}) | Entry: {p['entry_price']} | SL: {p['sl']:.4f}{state_info}")
+                             be_icon = '✅' if st['be_locked'] else '❌'
+                             state_str = (
+                                 f"\n       BE:{be_icon} | Scale:{st['scale_level']}/{MAX_SCALE}"
+                                 f" | Best:{st['best_price']:.4f} | Avg:{st['avg_price']:.4f}"
+                                 f" | ATR@Entry:{st['atr_at_entry']:.4f}"
+                             )
+                         
+                         logger.info(
+                             f"   📌 {s} ({p['side']}) | Entry:{p['entry_price']:.4f} → Now:{curr_price:.4f}"
+                             f" | PnL:{live_pnl_pct:+.2f}% | SL:{p['sl']:.4f}"
+                             f" | Hold:{elapsed_str} ({candles}/{MAX_HOLD_CANDLES} candles)"
+                             f"{state_str}"
+                         )
+                 else:
+                     logger.info(f"   💤 No open positions")
                  
-                 await asyncio.sleep(300) # 5 Minutes
+                 # Watchlist summary
+                 if wl_count > 0:
+                     wl_summary = ', '.join([f"{p['symbol']}({p['direction'][0]})" for p in self.daily_watchlist[:5]])
+                     if wl_count > 5:
+                         wl_summary += f" +{wl_count-5} more"
+                     logger.info(f"   🎯 Watchlist: {wl_summary}")
+                 
+                 logger.info(f"{'='*60}")
+                 
+                 await asyncio.sleep(120) # 2 Minutes
              except Exception as e:
                  logger.error(f"Reporting Error: {e}")
                  await asyncio.sleep(60)
