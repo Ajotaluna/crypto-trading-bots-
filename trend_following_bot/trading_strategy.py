@@ -271,13 +271,8 @@ def confirm_entry(df, direction):
         # Trend velocity must be positive
         if kf_slope < 0:
             return False
-            
-        # 4. Extension check (don't buy if too far extended from Kalman)
-        if kf_slope < 0:
-            return False
 
         # 4. ENTROPY FILTER (Chaos Check)
-        # 0.78 allows more activity but still blocks total chaos (1.0).
         if entropy > 0.78:
             return False
             
@@ -292,8 +287,8 @@ def confirm_entry(df, direction):
         if close_p >= curr['open']:
             return False
             
-        # 2. RSI Check
-        if curr['rsi'] < 28 or curr['rsi'] > 75:
+        # 2. RSI Check (relaxed lower bound for bearish momentum)
+        if curr['rsi'] < 18 or curr['rsi'] > 75:
             return False
             
         # 3. KALMAN TREND CHECK
@@ -301,10 +296,6 @@ def confirm_entry(df, direction):
         if close_p > kf_price:
             return False
         # Negative velocity
-        if kf_slope > 0:
-            return False
-            
-        # 4. Extension check
         if kf_slope > 0:
             return False
 

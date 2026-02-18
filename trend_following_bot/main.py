@@ -1,6 +1,7 @@
 """
 Main Bot Logic - REFACTORED FOR DOUBLE FUNNEL STRATEGY
 Integrates AnomalyScanner (Macro) and TradingStrategy (Micro).
+ALIGNED WITH backtest_progressive.py PositionManager logic.
 """
 import asyncio
 import logging
@@ -16,18 +17,16 @@ from win_rate_tracker import WinRateTracker
 import pandas as pd
 from blacklist_manager import BlacklistManager
 
-# NEW IMPORTS (The "New Brain")
+# Strategy imports (shared with backtest)
 from scanner_anomaly import AnomalyScanner
-# NEW: Import PID Manager
-from trading_strategy import PositionManager
 from trading_strategy import (
     confirm_entry, 
     calculate_indicators, 
     PositionManager,
-    RiskManager, # NEW
+    PIDController,
+    RiskManager,
     MAX_SCORE,
     TOP_N,
-    # Strategy Configs
     INITIAL_CAPITAL,
     LEVERAGE,
     COMMISSION,
@@ -43,10 +42,6 @@ from trading_strategy import (
     SCALE_LEVEL_3,
     MAX_SCALE
 )
-
-# ... (rest of imports)
-
-
 
 # Setup logging
 if not os.path.exists('logs'):
@@ -73,14 +68,9 @@ class TrendBot:
         
         # Strategies
         self.scanner = AnomalyScanner()
-        self.position_mgr = PositionManager() # Replacing internal logic? 
-        # Actually PositionManager in trading_strategy is for backtest state.
-        # Producton usually manages state via exchange/MarketData.
-        # But we need the PID logic.
-        # For now, let's keep the production position management (Safety Loop)
-        # but use confirm_entry for signals.
         
         self.daily_watchlist = [] # The Top 10 for the day
+        self.pos_state = {}  # Local state tracker (backtest PositionManager alignment)
         
         # SCOREBOARD
         self.tracker = WinRateTracker()
@@ -144,14 +134,13 @@ class TrendBot:
                     self.tracker.reset_daily_pnl_if_new_day()
 
                 # --- B. MICRO SCAN (Intraday) ---
-                # Iterate through the Watchlist
                 if not self.daily_watchlist:
                     logger.warning("⚠️ Watchlist empty. Retrying Macro Scan...")
                     await self.run_macro_scan()
                     await asyncio.sleep(60)
                     continue
 
-                for pick in self.daily_watchlist:
+                for pick in list(self.daily_watchlist):  # Copy for safe removal
                     symbol = pick['symbol']
                     direction = pick['direction']
                     
@@ -166,12 +155,12 @@ class TrendBot:
                     # MICRO CHECK
                     await self.check_micro_entry(symbol, direction, pick)
                     
+                    # Remove from watchlist after entry (backtest alignment)
+                    if symbol in self.market.positions and pick in self.daily_watchlist:
+                        self.daily_watchlist.remove(pick)
+                    
                     await asyncio.sleep(1) # Pace requests
 
-                # Wait for next cycle
-                # 15m candles update every minute, but we can check more often?
-                # Let's check every minute to be safe? Or match candle close?
-                # Real-time can check every minute.
                 await asyncio.sleep(60)
 
             except Exception as e:
@@ -179,44 +168,29 @@ class TrendBot:
                 await asyncio.sleep(60)
 
     async def run_macro_scan(self):
-        """
-        Runs AnomalyScanner on the entire market to pick the daily Top N.
-        """
+        """Runs AnomalyScanner on the entire market to pick the daily Top N."""
         try:
             logger.info("🔭 MACRO SCAN: Fetching market data...")
             
-            # 1. Get Tickers/Candidates (Whitelist Logic)
             tickers = await self.market.get_trading_universe() 
             if not tickers:
                 logger.error("No tickers found in Universe.")
                 return
 
-            # 2. Add 'whitelist' logic here if implemented later
-            # ...
-            
-            # 3. Build Data Dictionary for Scanner
             pair_data = {}
             logger.info(f"📥 Downloading history for {len(tickers)} pairs...")
             
             for symbol in tickers:
-                # We need ~480 candles for history
                 df = await self.market.get_klines(symbol, interval='15m', limit=490)
                 if not df.empty:
-                    # Rename likely required columns if get_klines doesn't match
-                    # Assuming market_data returns DataFrame with lower case cols
                     pair_data[symbol] = df
-                await asyncio.sleep(0.05) # Rate limit
+                await asyncio.sleep(0.05)
                 
             logger.info(f"📊 Analyzing {len(pair_data)} pairs...")
             
-            # 4. Run AnomalyScanner
-            # It expects synchronous dict of DF.
-            # score_universe(pair_data, now_idx, top_n)
-            # now_idx = -1 (latest)
-            
             picks = self.scanner.score_universe(pair_data, -1, top_n=TOP_N)
             
-            # Filter by MAX_SCORE
+            # Filter by MAX_SCORE (matches backtest)
             self.daily_watchlist = [p for p in picks if p['score'] < MAX_SCORE]
             
             logger.info(f"✅ MACRO RESULTS: {len(self.daily_watchlist)} Candidates Selected.")
@@ -227,18 +201,12 @@ class TrendBot:
             logger.error(f"Macro Scan Error: {e}")
 
     async def check_micro_entry(self, symbol, direction, pick_info):
-        """
-        Runs confirm_entry on the specific candidate.
-        """
+        """Runs confirm_entry on the specific candidate."""
         try:
-            # 1. Get Fresh Data
-            # We need enough validation data (~50 candles minimum for indicators/Kalman)
             limit = 100 
             df = await self.market.get_klines(symbol, interval='15m', limit=limit)
             if df.empty: return
 
-            # 2. Calculate Indicators (Using the NEW optimized function)
-            # Run in thread to avoid blocking loop
             loop = asyncio.get_running_loop()
             df_indicators = await loop.run_in_executor(
                 self.executor,
@@ -246,8 +214,6 @@ class TrendBot:
                 df
             )
             
-            # 3. Micro Confirmation (Kalman, Entropy, RSI)
-            # confirm_entry(df, direction)
             is_valid = await loop.run_in_executor(
                 self.executor,
                 confirm_entry,
@@ -258,8 +224,6 @@ class TrendBot:
             if is_valid:
                 logger.info(f"✨ MICRO TRIGGER: {symbol} ({direction}) Confirmed!")
                 
-                # 4. Execute
-                # Signal details
                 signal = {
                     'direction': direction,
                     'score': pick_info['score'],
@@ -273,60 +237,86 @@ class TrendBot:
             logger.error(f"Micro Scan Error {symbol}: {e}")
 
     async def execute_trade(self, symbol, signal, df):
-        # ... (Reusing existing execution logic, stripped of shadow/legacy guards) ...
+        """Execute trade with backtest-aligned sizing and state initialization."""
+        curr_price = float(df['close'].iloc[-1])
+        atr = float(df['atr'].iloc[-1])
         
-        curr_price = df['close'].iloc[-1]
-        atr = df['atr'].iloc[-1]
+        if atr <= 0: return
         
-        # SIZING & SL/TP based on STRATEGY CONSTANTS
-        # INITIAL_SL_ATR = 5.0 (Default)
-        sl_dist = atr * INITIAL_SL_ATR 
-        
+        # SL/TP Calculation (matches backtest)
         if signal['direction'] == 'LONG':
-            sl = curr_price - sl_dist
-            tp = curr_price + (atr * 10) # Open ended really
+            sl = curr_price - (atr * INITIAL_SL_ATR)
+            tp = curr_price + (atr * 10)
         else:
-            sl = curr_price + sl_dist
+            sl = curr_price + (atr * INITIAL_SL_ATR)
             tp = curr_price - (atr * 10)
-
-        # RISK SIZING: RISK_PER_ENTRY (1%)
-        # Logic: Position Size = (Risk Amount) / (Distance to SL %) / Leverage?
-        # MarketData.calculate_position_size usually handles 'Risk Amount / Distance'.
-        # We pass override_risk_pct = RISK_PER_ENTRY.
         
-        amount = self.market.calculate_position_size(
-            symbol, 
-            curr_price, 
-            sl, 
-            override_risk_pct=RISK_PER_ENTRY,
-            override_leverage=LEVERAGE
-        )
+        # POSITION SIZING (exact backtest formula)
+        equity = await self.get_equity()
+        risk_amt = equity * RISK_PER_ENTRY
+        risk_dist = abs(curr_price - sl)
+        if risk_dist <= 0: return
         
-        # LEVERAGE CHECK (Strategy Requirement)
-        # We should ensure MarketData uses LEVERAGE constant or we enforce it here.
-        # MarketData usually takes leverage from config. 
-        # But 'amount' is Notional USDT size.
+        margin = (risk_amt / (risk_dist / curr_price)) / LEVERAGE
+        margin = min(margin, equity * MAX_CAPITAL_PER_TRADE)
+        amount = margin * LEVERAGE  # Convert to notional for MarketData
         
         if amount < 6.0: return
         
         logger.info(f"⚡ EXECUTING {symbol} | SL: {sl:.4f} | Size: ${amount:.0f} (Risk {RISK_PER_ENTRY*100}%)")
         
-        # Execute with Strategy Leverage if possible, or just open
         result = await self.market.open_position(symbol, signal['direction'], amount, sl, tp)
         if result:
-             logger.info(f"🔫 OPEN SUCCESS {symbol}")
+            logger.info(f"🔫 OPEN SUCCESS {symbol}")
+            
+            # Initialize local state tracker (matches backtest PositionManager)
+            pid = PIDController(Kp=0.4, Ki=0.0, Kd=0.1, setpoint=0, output_limits=(-0.8, 0.5))
+            self.pos_state[symbol] = {
+                'best_price': curr_price,
+                'be_locked': False,
+                'pid': pid,
+                'avg_price': curr_price,
+                'atr_at_entry': atr,
+                'scale_level': 1,
+                'total_amount': margin,
+                'entry_price': curr_price,
+            }
 
-    # ... (Keeping Safety Loop, Reporting Loop, but stripped of Shadow Logic if user wants clean slate) ...
-    # User said: "Borra toda la logica que tenga que ver con señales"
-    # But Safety Loop is "Management", not "Signals".
-    # I will adapt Safety Loop to use PositionManager logic? 
-    # Or just keep the existing safety loop for now?
-    # User said "borra... señales". Safety is management.
-    # However, existing safety loop uses old logic.
-    # Let's keep it simple: Use MarketData's basic close and maybe rudimentary management.
-    
+    async def scale_into_position(self, symbol, direction, notional):
+        """Add to an existing position (scaling entry)."""
+        try:
+            if self.market.is_dry_run:
+                # Mock: Update position amount directly
+                pos = self.market.positions[symbol]
+                price = await self.market.get_current_price(symbol)
+                if price <= 0: return False
+                new_qty = notional / price
+                old_amount = pos['amount']
+                pos['amount'] = old_amount + new_qty
+                return True
+            else:
+                # Real: Place additional market order (Binance adds to position)
+                price = await self.market.get_current_price(symbol)
+                if price <= 0: return False
+                qty = notional / price
+                side_param = 'BUY' if direction == 'LONG' else 'SELL'
+                info = await self.market._get_symbol_precision(symbol)
+                qty_val = self.market._round_step_size(qty, info['q'])
+                if qty_val <= 0: return False
+                params = {
+                    'symbol': symbol,
+                    'side': side_param,
+                    'type': 'MARKET',
+                    'quantity': f"{qty_val}",
+                }
+                result = await self.market._signed_request('POST', '/fapi/v1/order', params)
+                return result is not None
+        except Exception as e:
+            logger.error(f"Scale Error {symbol}: {e}")
+            return False
+
     async def safety_loop(self):
-        """Active Position Manager (Simple)"""
+        """Active Position Manager"""
         logger.info("Started Safety Monitor...")
         while self.running:
             try:
@@ -336,110 +326,155 @@ class TrendBot:
                 logger.error(f"Safety Loop Error: {e}")
                 await asyncio.sleep(5)
 
-
     async def manage_positions(self):
         """
-        Manages active positions using PID Controller Logic (Inline).
-        Matches Backtest 'PositionManager' behavior.
+        Manages active positions using PID Controller Logic.
+        Faithfully matches Backtest PositionManager.update_positions() behavior.
         """
         for symbol, pos in list(self.market.positions.items()):
-            current_price = await self.market.get_current_price(symbol)
-            if current_price == 0: continue
+            # Initialize state for orphaned positions (e.g., after bot restart)
+            if symbol not in self.pos_state:
+                logger.info(f"⚠️ Initializing state for orphaned position: {symbol}")
+                pid = PIDController(Kp=0.4, Ki=0.0, Kd=0.1, setpoint=0, output_limits=(-0.8, 0.5))
+                self.pos_state[symbol] = {
+                    'best_price': pos['entry_price'],
+                    'be_locked': False,
+                    'pid': pid,
+                    'avg_price': pos['entry_price'],
+                    'atr_at_entry': 0,
+                    'scale_level': 1,
+                    'total_amount': pos.get('amount', 0) * pos['entry_price'] / LEVERAGE,
+                    'entry_price': pos['entry_price'],
+                }
             
-            # 1. Get Trend Data (ATR & Kalman)
+            state = self.pos_state[symbol]
+            
+            # 1. Get Fresh Market Data (ATR, Kalman, Price)
             try:
-                # We need fresh ATR for dynamic trailing
                 df = await self.market.get_klines(symbol, interval='15m', limit=50)
                 if df.empty: continue
                 
-                # Calculate Indicators (Need Kalman & ATR)
-                from trading_strategy import calculate_indicators, PIDController
-
                 loop = asyncio.get_running_loop()
                 df = await loop.run_in_executor(self.executor, calculate_indicators, df)
                 
-                # Extract metrics
-                atr = df['atr'].iloc[-1]
-                kf_price = df['kf_price'].iloc[-1]
+                current_price = float(df['close'].iloc[-1])
+                atr = float(df['atr'].iloc[-1])
+                kf_price = float(df['kf_price'].iloc[-1])
                 
+                if current_price == 0: continue
             except Exception as e:
                 logger.error(f"Data Error {symbol}: {e}")
                 continue
-
-            # 2. Hard Stop Checks (Safety Net)
+            
+            # ATR fallback (matches backtest)
+            if atr <= 0:
+                atr = state['atr_at_entry']
+            if atr <= 0:
+                atr = current_price * 0.02
+            if state['atr_at_entry'] <= 0:
+                state['atr_at_entry'] = atr
+            
+            # Track best price & calculate PnL (matches backtest exactly)
+            if pos['side'] == 'LONG':
+                if current_price > state['best_price']:
+                    state['best_price'] = current_price
+                pnl_atr = (current_price - state['avg_price']) / atr
+                dist_kalman_atr = (current_price - kf_price) / atr
+            else:
+                if current_price < state['best_price']:
+                    state['best_price'] = current_price
+                pnl_atr = (state['avg_price'] - current_price) / atr
+                dist_kalman_atr = (kf_price - current_price) / atr
+            
+            # --- 1. CHECK STOP LOSS ---
             is_sl = False
             if pos['side'] == 'LONG':
                 if current_price <= pos['sl']: is_sl = True
             else:
                 if current_price >= pos['sl']: is_sl = True
-                
+            
             if is_sl:
-                logger.warning(f"🛑 STOP LOSS HIT: {symbol}")
-                await self.market.close_position(symbol, "STOP LOSS")
+                reason = 'TRAILING_STOP' if state['be_locked'] else 'STOP_LOSS'
+                logger.warning(f"🛑 {reason}: {symbol}")
+                await self.market.close_position(symbol, reason)
+                self.pos_state.pop(symbol, None)
                 continue
-
-            # 3. PID DYNAMIC TRAILING LOGIC
-            # Use self.pos_manager as the state holder
-            if not hasattr(self, 'pos_manager'):
-                 self.pos_manager = type('obj', (object,), {'positions': {}})()
-
-            if symbol not in self.pos_manager.positions:
-                 self.pos_manager.positions[symbol] = {
-                     'pid': None 
-                 }
-                 
-            pm_pos = self.pos_manager.positions[symbol]
             
-            # Init PID if missing
-            if not pm_pos.get('pid'):
-                # Kp=0.5, Ki=0.1, Kd=0.1 (Standard Tuning)
-                pm_pos['pid'] = PIDController(Kp=0.5, Ki=0.1, Kd=0.1)
+            # --- 2. CHECK SCALING (before BE lock, matches backtest) ---
+            if state['scale_level'] < MAX_SCALE and not state['be_locked']:
+                ref_price = state['entry_price']
+                if pos['side'] == 'LONG':
+                    adverse_atr = (ref_price - current_price) / atr
+                else:
+                    adverse_atr = (current_price - ref_price) / atr
                 
-            pid = pm_pos['pid']
-            
-            # Error Calculation: (Price - Kalman) / ATR
-            if pos['side'] == 'LONG':
-                error = (current_price - kf_price) / atr
-            else:
-                error = (kf_price - current_price) / atr
+                should_scale = False
+                if state['scale_level'] == 1 and adverse_atr >= SCALE_LEVEL_2:
+                    should_scale = True
+                elif state['scale_level'] == 2 and adverse_atr >= SCALE_LEVEL_3:
+                    should_scale = True
                 
-            # PID Update
-            adjustment = pid.update(error)
+                if should_scale:
+                    equity = await self.get_equity()
+                    risk_amt = equity * RISK_PER_ENTRY
+                    risk_dist = abs(current_price - pos['sl'])
+                    if risk_dist > 0:
+                        new_margin = (risk_amt / (risk_dist / current_price)) / LEVERAGE
+                        new_margin = min(new_margin, equity * MAX_CAPITAL_PER_TRADE)
+                        notional = new_margin * LEVERAGE
+                        if notional >= 5:
+                            success = await self.scale_into_position(symbol, pos['side'], notional)
+                            if success:
+                                old_total = state['total_amount']
+                                state['total_amount'] += new_margin
+                                state['avg_price'] = (state['avg_price'] * old_total + current_price * new_margin) / state['total_amount']
+                                state['scale_level'] += 1
+                                logger.info(f"📈 SCALE {state['scale_level']}: {symbol} @ {current_price:.4f} | Avg: {state['avg_price']:.4f}")
             
-            # Base Trail Distance (2.0 ATR)
-            base_trail = 2.0 * atr
-            
-            # Dynamic Trail
-            calc_trail = base_trail - (adjustment * atr)
-            trail_dist = max(0.5 * atr, min(3.0 * atr, calc_trail))
-            
-            # Apply Trailing Stop
-            new_sl = pos['sl']
-            updated = False
-            
-            if pos['side'] == 'LONG':
-                potential_sl = current_price - trail_dist
-                # Only move SL UP
-                if potential_sl > pos['sl']:
-                    new_sl = potential_sl
-                    updated = True
-            else:
-                potential_sl = current_price + trail_dist
-                # Only move SL DOWN
-                if potential_sl < pos['sl']:
-                    new_sl = potential_sl
-                    updated = True
-                    
-            if updated and new_sl != pos['sl']:
+            # --- 3. BREAKEVEN LOCK (matches backtest: BE_LOCK_ATR = 1.5) ---
+            if not state['be_locked'] and pnl_atr >= BE_LOCK_ATR:
+                buffer = state['avg_price'] * 0.002
+                if pos['side'] == 'LONG':
+                    new_sl = state['avg_price'] + buffer
+                else:
+                    new_sl = state['avg_price'] - buffer
+                state['be_locked'] = True
                 await self.market.update_sl(symbol, new_sl)
-                # logger.info(f"🔄 PID TRAIL: {symbol} SL->{new_sl:.4f} (Err:{error:.2f})")
+                logger.info(f"🔒 BE LOCK: {symbol} SL->{new_sl:.4f} (PnL: {pnl_atr:.1f} ATR)")
+            
+            # --- 4. PID DYNAMIC TRAILING (after BE lock ONLY, matches backtest) ---
+            if state['be_locked']:
+                pid_adjust = state['pid'].update(dist_kalman_atr)
                 
-            # 4. Max Hold Time Check
+                # Trail = TRAIL_DISTANCE_ATR + PID output (matches backtest formula)
+                current_trail_atr = TRAIL_DISTANCE_ATR + pid_adjust
+                current_trail_atr = max(0.5, min(4.0, current_trail_atr))
+                
+                if pos['side'] == 'LONG':
+                    trail_sl = state['best_price'] - (atr * current_trail_atr)
+                    if trail_sl > pos['sl']:
+                        await self.market.update_sl(symbol, trail_sl)
+                        logger.debug(f"🔄 PID TRAIL: {symbol} SL->{trail_sl:.4f} (Adj:{pid_adjust:.2f})")
+                else:
+                    trail_sl = state['best_price'] + (atr * current_trail_atr)
+                    if trail_sl < pos['sl']:
+                        await self.market.update_sl(symbol, trail_sl)
+                        logger.debug(f"🔄 PID TRAIL: {symbol} SL->{trail_sl:.4f} (Adj:{pid_adjust:.2f})")
+            
+            # --- 5. MAX HOLD TIME (candle-equivalent via elapsed time) ---
             entry_time = pos.get('entry_time')
             if entry_time:
-                elapsed = datetime.now() - entry_time
-                if elapsed > timedelta(minutes=96*15): # 24h
-                     await self.market.close_position(symbol, "MAX_HOLD_TIME")
+                elapsed_minutes = (datetime.now() - entry_time).total_seconds() / 60
+                candles_elapsed = int(elapsed_minutes / 15)  # 15m candles
+                if candles_elapsed >= MAX_HOLD_CANDLES:
+                    logger.warning(f"⏰ MAX_HOLD_TIME: {symbol} ({candles_elapsed} candles)")
+                    await self.market.close_position(symbol, "MAX_HOLD_TIME")
+                    self.pos_state.pop(symbol, None)
+        
+        # Clean up pos_state for externally closed positions
+        closed_symbols = [s for s in self.pos_state if s not in self.market.positions]
+        for s in closed_symbols:
+            self.pos_state.pop(s, None)
 
     async def reporting_loop(self):
         """Periodically reports status."""
@@ -451,10 +486,14 @@ class TrendBot:
                      if st: total_equity = st['equity']
                  
                  open_count = len(self.market.positions)
-                 logger.info(f"--- 📊 STATUS: Equity ${total_equity:.2f} | Open Logic: {open_count} ---")
+                 logger.info(f"--- 📊 STATUS: Equity ${total_equity:.2f} | Open: {open_count} ---")
                  if open_count > 0:
                      for s, p in self.market.positions.items():
-                         logger.info(f"   > {s} ({p['side']}) | Entry: {p['entry_price']} | SL: {p['sl']:.4f}")
+                         state_info = ""
+                         if s in self.pos_state:
+                             st = self.pos_state[s]
+                             state_info = f" | BE:{'✅' if st['be_locked'] else '❌'} | Scale:{st['scale_level']}"
+                         logger.info(f"   > {s} ({p['side']}) | Entry: {p['entry_price']} | SL: {p['sl']:.4f}{state_info}")
                  
                  await asyncio.sleep(300) # 5 Minutes
              except Exception as e:

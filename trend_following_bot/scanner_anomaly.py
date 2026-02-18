@@ -18,7 +18,7 @@ class AnomalyScanner:
     """Scores all pairs RELATIVE to the market — both LONG and SHORT."""
 
     @staticmethod
-    def score_universe(pair_data, now_idx, top_n=10, long_ratio=0.6):
+    def score_universe(pair_data, now_idx, top_n=10, long_ratio=None):
         """
         Score all pairs for both LONG and SHORT opportunities.
 
@@ -136,6 +136,32 @@ class AnomalyScanner:
             metrics[s]['ret_rank_pct'] = (i / n) * 100
 
         # ============================================
+        # STEP 2.5: MARKET REGIME DETECTION
+        # Detect if market is mostly bearish/bullish
+        # and apply bonus/penalty to align signals.
+        # ============================================
+        all_returns = [metrics[s]['ret_24h'] for s in symbols]
+        median_ret = np.median(all_returns) if all_returns else 0
+        
+        # Regime classification
+        if median_ret < -1.0:
+            regime = 'BEARISH'
+            regime_bonus_short = 15
+            regime_penalty_long = 10
+        elif median_ret > 1.0:
+            regime = 'BULLISH'
+            regime_bonus_short = 0
+            regime_penalty_long = 0
+        else:
+            regime = 'NEUTRAL'
+            regime_bonus_short = 0
+            regime_penalty_long = 0
+        
+        # Bullish bonus (mirror logic)
+        regime_bonus_long = 15 if regime == 'BULLISH' else 0
+        regime_penalty_short = 10 if regime == 'BULLISH' else 0
+
+        # ============================================
         # STEP 3: Score LONG candidates
         # ============================================
         long_candidates = []
@@ -202,6 +228,14 @@ class AnomalyScanner:
             elif signal_count >= 2:
                 score += 10
                 reasons.append("DOUBLE_LONG")
+
+            # Market Regime Adjustment
+            if regime_bonus_long > 0:
+                score += regime_bonus_long
+                reasons.append(f"REGIME_BULL(+{regime_bonus_long})")
+            if regime_penalty_long > 0:
+                score -= regime_penalty_long
+                reasons.append(f"REGIME_BEAR(-{regime_penalty_long})")
 
             if score > 0:
                 long_candidates.append({
@@ -283,6 +317,14 @@ class AnomalyScanner:
                 score += 10
                 reasons.append("DOUBLE_SHORT")
 
+            # Market Regime Adjustment
+            if regime_bonus_short > 0:
+                score += regime_bonus_short
+                reasons.append(f"REGIME_BEAR(+{regime_bonus_short})")
+            if regime_penalty_short > 0:
+                score -= regime_penalty_short
+                reasons.append(f"REGIME_BULL(-{regime_penalty_short})")
+
             if score > 0:
                 short_candidates.append({
                     'symbol': s,
@@ -298,26 +340,48 @@ class AnomalyScanner:
         # ============================================
         # STEP 5: Build mixed roster (LONG + SHORT)
         # ============================================
-        long_slots = max(0, int(top_n * long_ratio))
-        if long_ratio >= 1.0:
-            long_slots = top_n
-        short_slots = top_n - long_slots
+        
+        # New "Meritocratic" Mode (Dynamic Ratio)
+        if long_ratio is None:
+            # Combine all
+            all_candidates = long_candidates + short_candidates
+            # Sort by score desc
+            all_candidates.sort(key=lambda x: x['score'], reverse=True)
+            
+            roster = []
+            selected_symbols = set()
+            
+            for pick in all_candidates:
+                if len(roster) >= top_n:
+                    break
+                if pick['symbol'] not in selected_symbols:
+                    roster.append(pick)
+                    selected_symbols.add(pick['symbol'])
+                    
+            return roster
 
-        long_candidates.sort(key=lambda x: x['score'], reverse=True)
-        short_candidates.sort(key=lambda x: x['score'], reverse=True)
+        # Legacy "Fixed Quota" Mode
+        else:
+            long_slots = max(0, int(top_n * long_ratio))
+            if long_ratio >= 1.0:
+                long_slots = top_n
+            short_slots = top_n - long_slots
 
-        roster = []
-        # Add top longs
-        for pick in long_candidates[:long_slots]:
-            roster.append(pick)
+            long_candidates.sort(key=lambda x: x['score'], reverse=True)
+            short_candidates.sort(key=lambda x: x['score'], reverse=True)
 
-        # Add top shorts (avoid duplicates)
-        selected_symbols = set(p['symbol'] for p in roster)
-        for pick in short_candidates:
-            if len(roster) >= top_n:
-                break
-            if pick['symbol'] not in selected_symbols:
+            roster = []
+            # Add top longs
+            for pick in long_candidates[:long_slots]:
                 roster.append(pick)
-                selected_symbols.add(pick['symbol'])
 
-        return roster
+            # Add top shorts (avoid duplicates)
+            selected_symbols = set(p['symbol'] for p in roster)
+            for pick in short_candidates:
+                if len(roster) >= top_n:
+                    break
+                if pick['symbol'] not in selected_symbols:
+                    roster.append(pick)
+                    selected_symbols.add(pick['symbol'])
+
+            return roster
