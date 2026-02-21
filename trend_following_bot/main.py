@@ -19,6 +19,8 @@ from blacklist_manager import BlacklistManager
 
 # Strategy imports (shared with backtest)
 from scanner_anomaly import AnomalyScanner
+from whale_market_scanner import scan_whale_universe
+from whale_watcher import WhaleWatcher
 from trading_strategy import (
     confirm_entry, 
     calculate_indicators, 
@@ -68,8 +70,12 @@ class TrendBot:
         
         # Strategies
         self.scanner = AnomalyScanner()
-        
-        self.daily_watchlist = [] # The Top 10 for the day
+
+        # Whale scanner
+        self.whale_watchlist: list = []   # Top-15 pares con señal de ballena
+        self.whale_watcher = WhaleWatcher()
+
+        self.daily_watchlist = []  # Top-10 anomaly + hasta 15 whale (sin duplicados)
         self.pos_state = {}  # Local state tracker (backtest PositionManager alignment)
         
         # SCOREBOARD
@@ -101,8 +107,12 @@ class TrendBot:
 
         # 2. Launch Background Loops
         asyncio.create_task(self.reporting_loop())
-        asyncio.create_task(self.safety_loop()) 
-        
+        asyncio.create_task(self.safety_loop())
+        asyncio.create_task(
+            self.whale_watcher.start(self.whale_watchlist, self.market)
+        )
+        asyncio.create_task(self.whale_entry_loop())
+
         # 3. Start The Core Brain
         await self.execution_loop()
 
@@ -145,23 +155,27 @@ class TrendBot:
                 for pick in list(self.daily_watchlist):  # Copy for safe removal
                     symbol = pick['symbol']
                     direction = pick['direction']
-                    
+
+                    # Pares whale esperan su movimiento — NO entran por el micro scan normal
+                    if pick.get('layer') == 'WHALE':
+                        continue
+
                     # Capacity Check
                     if len(self.market.positions) >= MAX_SIGNALS:
                         logger.info(f"⛔ CAPACITY FULL: {len(self.market.positions)}/{MAX_SIGNALS} — skipping remaining picks")
                         break
-                    
+
                     # Skip if already open
                     if symbol in self.market.positions:
                         continue
-                        
-                    # MICRO CHECK
+
+                    # MICRO CHECK (solo pares ANOMALY)
                     await self.check_micro_entry(symbol, direction, pick)
-                    
+
                     # Remove from watchlist after entry (backtest alignment)
                     if symbol in self.market.positions and pick in self.daily_watchlist:
                         self.daily_watchlist.remove(pick)
-                    
+
                     await asyncio.sleep(1) # Pace requests
 
                 await asyncio.sleep(60)
@@ -192,18 +206,133 @@ class TrendBot:
             logger.info(f"📊 Analyzing {len(pair_data)} pairs...")
             
             picks = self.scanner.score_universe(pair_data, -1, top_n=TOP_N)
-            
+
             # Filter by MAX_SCORE (matches backtest)
             self.daily_watchlist = [p for p in picks if p['score'] < MAX_SCORE]
-            
-            logger.info(f"✅ MACRO RESULTS: {len(self.daily_watchlist)} Candidates Selected.")
+
+            logger.info(f"✅ MACRO (ANOMALY): {len(self.daily_watchlist)} candidatos")
             for p in self.daily_watchlist:
-                logger.info(f"  > {p['symbol']} ({p['direction']}) | Score: {p['score']} | Reasons: {p['reasons']}")
-                
+                logger.info(f"  > {p['symbol']} ({p['direction']}) | Score: {p['score']} | {p['reasons']}")
+
+            # ─── WHALE SCAN: top-15 adicionales ──────────────────────
+            logger.info("🐋 WHALE SCAN: escaneando todo el mercado en batches de 50...")
+            try:
+                whale_picks = await scan_whale_universe(self.market, top_n=15)
+            except Exception as we:
+                logger.error(f"Whale Scan Error: {we}")
+                whale_picks = []
+
+            self.whale_watchlist = whale_picks
+            # Actualizar el watcher con los nuevos pares
+            self.whale_watcher.update_pairs(whale_picks)
+
+            # Merge: anomaly + whale (sin duplicados, por orden de score DESC)
+            existing_syms = {p['symbol'] for p in self.daily_watchlist}
+            added_whale = 0
+            for wp in whale_picks:
+                if wp['symbol'] not in existing_syms:
+                    self.daily_watchlist.append(wp)
+                    existing_syms.add(wp['symbol'])
+                    added_whale += 1
+
+            # Re-ordenar por score descendente (priorizamos los más fuertes)
+            self.daily_watchlist.sort(key=lambda x: x['score'], reverse=True)
+
+            logger.info(
+                f"✅ WATCHLIST FINAL: {len(self.daily_watchlist)} pares "
+                f"(anomaly={len(picks)} + whale={added_whale} únicos)"
+            )
+            for p in self.daily_watchlist:
+                layer = p.get('layer', 'ANOMALY')
+                logger.info(f"  [{layer:7s}] {p['symbol']:12s} ({p['direction']:5s}) | "
+                            f"Score: {p['score']:3d} | {p.get('reasons','')[:70]}")
+
         except Exception as e:
             logger.error(f"Macro Scan Error: {e}")
 
+    async def whale_entry_loop(self):
+        """
+        Consumes señales de movimiento de ballena de la move_queue del WhaleWatcher.
+
+        Cuando llega una señal (la ballena ya ejecutó su movimiento), este método:
+        1. Verifica que el par no esté ya abierto y que haya capacidad
+        2. Descarga klines frescos y calcula ATR (requerido por execute_trade)
+        3. Llama a execute_trade directamente — SIN confirm_entry
+
+        Es el path de entrada exclusivo para pares WHALE. Los pares ANOMALY
+        siguen usando el micro scan normal con confirm_entry.
+        """
+        logger.info("🐋 whale_entry_loop: iniciado — esperando señales de movimiento...")
+        loop = asyncio.get_event_loop()
+
+        while self.running:
+            try:
+                # Esperar la próxima señal de la queue (timeout para no bloquear)
+                try:
+                    whale_signal = await asyncio.wait_for(
+                        self.whale_watcher.move_queue.get(), timeout=30.0
+                    )
+                except asyncio.TimeoutError:
+                    continue
+
+                sym       = whale_signal['symbol']
+                direction = whale_signal['direction']
+
+                logger.info(
+                    f"🐋 WHALE ENTRY SIGNAL: {sym} {direction} | "
+                    f"move_score={whale_signal['move_score']} | "
+                    f"signals={whale_signal.get('move_signals', [])}"
+                )
+
+                # Verificar capacidad y que no esté ya abierto
+                if len(self.market.positions) >= MAX_SIGNALS:
+                    logger.info(f"⛔ WHALE ENTRY {sym}: capacidad llena ({MAX_SIGNALS}/{MAX_SIGNALS})")
+                    continue
+                if sym in self.market.positions:
+                    logger.info(f"⚠️  WHALE ENTRY {sym}: posición ya abierta, ignorando")
+                    continue
+                if sym in self.blacklist.get_blacklist():
+                    logger.info(f"🚫 WHALE ENTRY {sym}: en blacklist, ignorando")
+                    continue
+
+                # Descargar klines y calcular indicadores (ATR requerido)
+                try:
+                    df = await self.market.get_klines(sym, interval='15m', limit=100)
+                    if df is None or df.empty:
+                        logger.warning(f"WHALE ENTRY {sym}: no hay datos")
+                        continue
+
+                    df_ind = await loop.run_in_executor(
+                        self.executor, calculate_indicators, df
+                    )
+                    if df_ind is None or df_ind.empty or 'atr' not in df_ind.columns:
+                        logger.warning(f"WHALE ENTRY {sym}: falló el cálculo de ATR")
+                        continue
+
+                    # Señal directa (sin confirm_entry)
+                    signal = {
+                        'direction':     direction,
+                        'score':         whale_signal.get('score', 0),
+                        'strategy_mode': 'WHALE',
+                        'reasons':       whale_signal.get('reasons', 'WHALE_MOVE'),
+                    }
+                    logger.info(
+                        f"⚡ WHALE ENTRY: entrando en {sym} {direction} "
+                        f"(score={signal['score']}, confianza={whale_signal.get('confidence','?')})"
+                    )
+                    await self.execute_trade(sym, signal, df_ind)
+
+                except Exception as e:
+                    logger.error(f"WHALE ENTRY {sym}: error en entrada — {e}")
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"whale_entry_loop error: {e}")
+                await asyncio.sleep(5)
+
     async def check_micro_entry(self, symbol, direction, pick_info):
+
         """Runs confirm_entry on the specific candidate with detailed logging."""
         try:
             limit = 100 
