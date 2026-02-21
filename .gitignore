@@ -1,38 +1,103 @@
-# System
+# .gitignore — Nueva carpeta (repo raíz)
+# Unifica reglas globales y específicas del trend_following_bot.
+
+# ─── Python ───────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
 *$py.class
-  *.log
-.vscode/
-.idea/
-.env
-.venv/
-.agent/
-*.pem
-*.csv
-# App Data (Ephemeral/Cache)
-calibration_data/
-backtest_data/
-data_cache/
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+.mypy_cache/
+.pytest_cache/
+.tox/
+htmlcov/
+.coverage
+.coverage.*
 
-# Logs
+# ─── Entorno virtual ──────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+Lib/
+Scripts/
+Include/
+pyvenv.cfg
+
+# ─── Secretos y claves ────────────────────────────────────────
+.env
+*.env
+*.pem
+*.key
+trend_following_bot/id_trend_bot
+trend_following_bot/id_trend_bot.pub
+secrets.json
+api_keys.json
+
+# ─── Logs ─────────────────────────────────────────────────────
 logs/
+*.log
 trend_bot.log
 backtest_results/
-fortress_bot/
+
+# ─── Datos históricos y caché (pesados, no necesarios en server)
+data_cache/
+backtest_data/
+calibration_data/
+trend_following_bot/data_cache/
+trend_following_bot/backtest_data/
+trend_following_bot/nascent_scanner/data/
+trend_following_bot/nascent_scanner/data_monthly/
+trend_following_bot/nascent_scanner/data_30d/
+trend_following_bot/nascent_scanner/backtest_results/
+*.csv
+*.parquet
+*.pickle
+*.pkl
+*.h5
+*.hdf5
+
+# ─── Carpetas obsoletas / backups locales ─────────────────────
+legacy_backup/
+strategy_lab/
 _legacy_archive/
-# Temp
+fortress_bot/
+trend_following_bot/legacy_backup/
+trend_following_bot/strategy_lab/
+*_backup.py
+*_backup*/
+*.bak
+*.old
+
+# ─── IDEs y herramientas de desarrollo ────────────────────────
+.vscode/
+.idea/
+*.code-workspace
+.agent/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Notebooks ────────────────────────────────────────────────
+*.ipynb
+.ipynb_checkpoints/
+
+# ─── Archivos temporales ──────────────────────────────────────
+*.tmp
+*.temp
+~$*
+
+# ─── Archivos locales de test y notas ─────────────────────────
 porqueria.txt
 stats.json
-strategy_lab/
-trend_following_bot/strategy_lab/
-
-# Trend Following Bot - Non-Production
-trend_following_bot/nascent_scanner/
-trend_following_bot/legacy_backup/
-trend_following_bot/backtest_data/
-trend_following_bot/data_cache/
-
+trend_following_bot/test_prod_fix.py
+trend_following_bot/generate_whitelist.py
+trend_following_bot/sniper_mechanics_design.md
 trend_following_bot/main_backup.py
 trend_following_bot/test*.py
 trend_following_bot/*.md

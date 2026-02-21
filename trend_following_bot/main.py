@@ -250,14 +250,54 @@ class TrendBot:
         except Exception as e:
             logger.error(f"Macro Scan Error: {e}")
 
+    async def _get_btc_trend(self) -> str:
+        """
+        Determina la tendencia macro de BTC en el timeframe 15m.
+
+        Returns:
+            'BULL'    — BTC subiendo con fuerza (EMA20 > EMA50 + slope positivo)
+            'BEAR'    — BTC bajando con fuerza (EMA20 < EMA50 + slope negativo)
+            'NEUTRAL' — zona gris (EMA20 ≈ EMA50 o tendencia ambigua)
+        """
+        try:
+            df = await self.market.get_klines('BTCUSDT', interval='15m', limit=60)
+            if df is None or df.empty or len(df) < 52:
+                return 'NEUTRAL'  # Sin datos — no bloqueamos
+
+            close = df['close'].astype(float)
+            ema20 = close.ewm(span=20, adjust=False).mean()
+            ema50 = close.ewm(span=50, adjust=False).mean()
+
+            last_ema20 = float(ema20.iloc[-1])
+            last_ema50 = float(ema50.iloc[-1])
+            last_price = float(close.iloc[-1])
+
+            # Separación entre EMAs como % del precio
+            spread_pct = (last_ema20 - last_ema50) / last_price * 100
+
+            # Pendiente de las últimas 8 velas (velocidad de movimiento)
+            slope = float(close.iloc[-1] - close.iloc[-8]) / float(close.iloc[-8]) * 100
+
+            if spread_pct > 0.15 and slope > 0.3:    # EMA20 sobre EMA50 + subiendo
+                return 'BULL'
+            elif spread_pct < -0.15 and slope < -0.3: # EMA20 bajo EMA50 + bajando
+                return 'BEAR'
+            else:
+                return 'NEUTRAL'
+
+        except Exception as e:
+            logger.debug(f"_get_btc_trend error: {e}")
+            return 'NEUTRAL'  # Ante cualquier error, no bloqueamos
+
     async def whale_entry_loop(self):
         """
         Consumes señales de movimiento de ballena de la move_queue del WhaleWatcher.
 
         Cuando llega una señal (la ballena ya ejecutó su movimiento), este método:
         1. Verifica que el par no esté ya abierto y que haya capacidad
-        2. Descarga klines frescos y calcula ATR (requerido por execute_trade)
-        3. Llama a execute_trade directamente — SIN confirm_entry
+        2. 🦸 Filtro BTC: bloquea entradas que van fuerte contra la tendencia macro
+        3. Descarga klines frescos y calcula ATR (requerido por execute_trade)
+        4. Llama a execute_trade directamente — SIN confirm_entry
 
         Es el path de entrada exclusivo para pares WHALE. Los pares ANOMALY
         siguen usando el micro scan normal con confirm_entry.
@@ -294,6 +334,36 @@ class TrendBot:
                 if sym in self.blacklist.get_blacklist():
                     logger.info(f"🚫 WHALE ENTRY {sym}: en blacklist, ignorando")
                     continue
+
+                # ─── FILTRO BTC (tendencia macro) ─────────────────────────
+                btc_trend   = await self._get_btc_trend()
+                confidence  = whale_signal.get('confidence', 'LOW')
+                move_score  = whale_signal.get('move_score', 0)
+
+                # Bloquear si BTC va fuertemente en contra
+                # Excepción: señales ULTRA con move_score muy alto pasan igual
+                btc_blocks = (
+                    (direction == 'LONG'  and btc_trend == 'BEAR') or
+                    (direction == 'SHORT' and btc_trend == 'BULL')
+                )
+                ultra_override = (confidence == 'ULTRA' and move_score >= 120)
+
+                if btc_blocks and not ultra_override:
+                    logger.info(
+                        f"🦸 WHALE ENTRY {sym} BLOQUEADA por BTC trend: "
+                        f"dir={direction} vs BTC={btc_trend} | "
+                        f"conf={confidence} move_score={move_score}"
+                    )
+                    continue
+
+                if btc_blocks and ultra_override:
+                    logger.info(
+                        f"⚡ WHALE ULTRA OVERRIDE: {sym} entra contra BTC trend "
+                        f"({btc_trend}) por señal extrema (move_score={move_score})"
+                    )
+
+                if btc_trend != 'NEUTRAL' and not btc_blocks:
+                    logger.info(f"✅ BTC trend={btc_trend} alinea con {sym} {direction}")
 
                 # Descargar klines y calcular indicadores (ATR requerido)
                 try:
