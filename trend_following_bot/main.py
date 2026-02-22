@@ -335,7 +335,7 @@ class TrendBot:
                 if sym in self.market.positions:
                     logger.info(f"⚠️  WHALE ENTRY {sym}: posición ya abierta, ignorando")
                     continue
-                if sym in self.blacklist.get_blacklist():
+                if not self.blacklist.is_allowed(sym):
                     logger.info(f"🚫 WHALE ENTRY {sym}: en blacklist, ignorando")
                     continue
 
