@@ -303,10 +303,14 @@ class TrendBot:
         siguen usando el micro scan normal con confirm_entry.
         """
         logger.info("🐋 whale_entry_loop: iniciado — esperando señales de movimiento...")
-        loop = asyncio.get_event_loop()
 
         while self.running:
             try:
+                # Esperar a que la queue esté inicializada (se crea en whale_watcher.start())
+                if self.whale_watcher.move_queue is None:
+                    await asyncio.sleep(1)
+                    continue
+
                 # Esperar la próxima señal de la queue (timeout para no bloquear)
                 try:
                     whale_signal = await asyncio.wait_for(

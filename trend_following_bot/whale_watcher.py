@@ -236,9 +236,10 @@ class WhaleWatcher:
         self._last_alert: Dict[str, float] = {}   # sym -> timestamp
         self._added_at:   Dict[str, float] = {}   # sym -> timestamp de cuando se añadió
 
-        # Queue de señales de movimiento para que main.py abra trades directamente.
-        # Cada item es un dict con todas las claves necesarias para execute_trade.
-        self.move_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+        # NOTE: La Queue se crea en start() para garantizar que se crea dentro
+        # del event loop activo. En Python <=3.9, asyncio.Queue creada fuera del
+        # loop causa "Future attached to a different loop".
+        self.move_queue: Optional[asyncio.Queue] = None
 
     def update_pairs(self, whale_picks: List[Dict[str, Any]]):
         """
@@ -275,6 +276,11 @@ class WhaleWatcher:
             initial_pairs: output de scan_whale_universe()
             market:        instancia de MarketData del bot
         """
+        # Crear la Queue AQUÍ, dentro del event loop activo.
+        # Esto es necesario para Python <=3.9 donde asyncio.Queue enlaza el loop
+        # en el momento de su creación.
+        self.move_queue = asyncio.Queue(maxsize=100)
+
         self._running = True
         self._pairs   = list(initial_pairs)
         now = time.time()
@@ -401,6 +407,9 @@ class WhaleWatcher:
             'whale_reasons': whale_reasons,
         }
         try:
-            self.move_queue.put_nowait(signal)
+            if self.move_queue is not None:
+                self.move_queue.put_nowait(signal)
+            else:
+                logger.warning(f"WhaleWatcher: move_queue no inicializada, descartando señal {symbol}")
         except asyncio.QueueFull:
             logger.warning(f"WhaleWatcher: move_queue llena, descartando señal {symbol}")

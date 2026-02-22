@@ -102,3 +102,4 @@ trend_following_bot/main_backup.py
 trend_following_bot/test*.py
 trend_following_bot/*.md
 trend_following_bot/*.txt
+forex_trend_bot
