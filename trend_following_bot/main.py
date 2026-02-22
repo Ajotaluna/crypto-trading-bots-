@@ -376,7 +376,7 @@ class TrendBot:
                         logger.warning(f"WHALE ENTRY {sym}: no hay datos")
                         continue
 
-                    df_ind = await loop.run_in_executor(
+                    df_ind = await asyncio.get_running_loop().run_in_executor(
                         self.executor, calculate_indicators, df
                     )
                     if df_ind is None or df_ind.empty or 'atr' not in df_ind.columns:
