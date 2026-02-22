@@ -26,8 +26,8 @@ logger = logging.getLogger("WhaleMarketScanner")
 # ===================================================================
 
 BATCH_SIZE       = 50     # Pares por iteración (límite de streams Binance)
-MIN_VOL_USDT_M   = 10.0   # Volumen mínimo 24h en millones USDT
-MIN_SCORE        = 40     # Score mínimo para considerar un par
+MIN_VOL_USDT_M   = 25.0   # Volumen mínimo 24h en millones USDT (estricto: solo pares líquidos)
+MIN_SCORE        = 90     # Score mínimo: MEDIUM+ (era 40=LOW)
 KLINES_LIMIT     = 200    # Velas a descargar por par
 KLINES_INTERVAL  = '15m'  # Intervalo de las velas
 CONCURRENCY      = 8      # Descargas paralelas dentro de cada batch

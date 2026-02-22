@@ -40,9 +40,9 @@ logger = logging.getLogger("WhaleWatcher")
 
 POLL_INTERVAL      = 120    # Segundos entre chequeos (2 min)
 KLINES_FAST        = 20     # Velas para análisis de movimiento (última hora)
-MOVE_THRESHOLD     = 70     # Puntos mínimos para disparar alerta
-ACCEL_THRESHOLD    = 1.5    # % de retorno mínimo en 1 vela para ACCEL
-VOL_SURGE_MULT     = 3.0    # Multiplicador de vol para VOL_SURGE
+MOVE_THRESHOLD     = 100   # Puntos mínimos para disparar alerta (era 70 — ahora requiere BREAKOUT + extra)
+ACCEL_THRESHOLD    = 2.0    # % de retorno mínimo en 1 vela para ACCEL (era 1.5%)
+VOL_SURGE_MULT     = 4.0    # Multiplicador de vol para VOL_SURGE (era 3.0x)
 BREAKOUT_LOOKBACK  = 4      # Velas hacia atrás para detectar BREAKOUT
 RSI_PERIOD         = 14     # Período de RSI
 COOLDOWN_MIN       = 15     # Minutos mínimos entre alertas del mismo par

@@ -222,14 +222,23 @@ class TrendBot:
                 logger.error(f"Whale Scan Error: {we}")
                 whale_picks = []
 
-            self.whale_watchlist = whale_picks
+            # Solo señales HIGH/ULTRA al watchlist (filtramos LOW y MEDIUM)
+            whale_picks_filtered = [
+                p for p in whale_picks
+                if p.get('confidence') in ('HIGH', 'ULTRA')
+            ]
+            logger.info(
+                f"🐋 Whale picks totales: {len(whale_picks)} | "
+                f"Filtrados HIGH/ULTRA: {len(whale_picks_filtered)}"
+            )
+            self.whale_watchlist = whale_picks_filtered
             # Actualizar el watcher con los nuevos pares
-            self.whale_watcher.update_pairs(whale_picks)
+            self.whale_watcher.update_pairs(whale_picks_filtered)
 
-            # Merge: anomaly + whale (sin duplicados, por orden de score DESC)
+            # Merge: anomaly + whale HIGH/ULTRA (sin duplicados, por orden de score DESC)
             existing_syms = {p['symbol'] for p in self.daily_watchlist}
             added_whale = 0
-            for wp in whale_picks:
+            for wp in whale_picks_filtered:
                 if wp['symbol'] not in existing_syms:
                     self.daily_watchlist.append(wp)
                     existing_syms.add(wp['symbol'])
