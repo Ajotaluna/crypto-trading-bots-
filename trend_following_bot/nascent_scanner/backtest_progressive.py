@@ -239,7 +239,9 @@ class ProgressiveBacktest:
                     risk_dist = abs(candle['close'] - pos['sl'])
                     if risk_dist > 0:
                         v = (risk_amt / (risk_dist / candle['close'])) / LEVERAGE
-                        v = min(v, equity * MAX_CAPITAL_PER_TRADE)
+                        max_allowed_total = equity * MAX_CAPITAL_PER_TRADE
+                        max_allowed_new = max(0.0, max_allowed_total - pos['total_amount'])
+                        v = min(v, max_allowed_new)
                         if v >= 5: self.position_mgr.add_to_position(symbol, candle['close'], v, t_idx)
 
             # 4. Check Entries

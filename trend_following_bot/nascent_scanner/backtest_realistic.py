@@ -478,7 +478,8 @@ class RealisticBacktest:
                         if risk_distance > 0:
                             notional_needed = risk_amount / (risk_distance / current_price)
                             add_amount = notional_needed / LEVERAGE
-                            max_allowed = equity * MAX_CAPITAL_PER_TRADE
+                            max_allowed_total = equity * MAX_CAPITAL_PER_TRADE
+                            max_allowed = max(0.0, max_allowed_total - pos['total_amount'])
                             add_amount = min(add_amount, max_allowed)
                             if add_amount >= 5:
                                 self.position_mgr.add_to_position(

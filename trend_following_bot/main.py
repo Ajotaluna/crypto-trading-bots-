@@ -128,20 +128,29 @@ class TrendBot:
         await self.run_macro_scan()
         
         last_scan_date = datetime.utcnow().strftime('%Y-%m-%d')
+        last_scan_time = datetime.utcnow()
+        MACRO_SCAN_INTERVAL_HOURS = 4
         
         while self.running:
             try:
-                now_date = datetime.utcnow().strftime('%Y-%m-%d')
+                now_utc = datetime.utcnow()
+                now_date = now_utc.strftime('%Y-%m-%d')
                 
-                # --- A. DAILY MACRO RE-SCAN (UTC Midnight) ---
-                if now_date != last_scan_date:
-                    logger.info(f"📅 NEW DAY {now_date}: Running Macro Scan...")
+                # --- A. MACRO RE-SCAN (Every 4 Hours OR New Day) ---
+                hours_since_last_scan = (now_utc - last_scan_time).total_seconds() / 3600
+                
+                if now_date != last_scan_date or hours_since_last_scan >= MACRO_SCAN_INTERVAL_HOURS:
+                    if now_date != last_scan_date:
+                        logger.info(f"📅 NEW DAY {now_date}: Running Macro Scan...")
+                        # Reset Daily PnL
+                        self.start_balance = await self.get_equity()
+                        self.tracker.reset_daily_pnl_if_new_day()
+                    else:
+                        logger.info(f"⏱️ INTRADAY SCAN: {hours_since_last_scan:.1f} hours passed. Refreshing market data...")
+                        
                     await self.run_macro_scan()
                     last_scan_date = now_date
-                    
-                    # Reset Daily PnL
-                    self.start_balance = await self.get_equity()
-                    self.tracker.reset_daily_pnl_if_new_day()
+                    last_scan_time = now_utc
 
                 # --- B. MICRO SCAN (Intraday) ---
                 if not self.daily_watchlist:
@@ -152,31 +161,38 @@ class TrendBot:
 
                 logger.info(f"🔍 MICRO SCAN: Checking {len(self.daily_watchlist)} watchlist picks | Open: {len(self.market.positions)}/{MAX_SIGNALS}")
                 
-                for pick in list(self.daily_watchlist):  # Copy for safe removal
+                # Check all picks concurrently
+                async def process_pick(pick):
                     symbol = pick['symbol']
                     direction = pick['direction']
 
                     # Pares whale esperan su movimiento — NO entran por el micro scan normal
                     if pick.get('layer') == 'WHALE':
-                        continue
+                        return None
 
                     # Capacity Check
                     if len(self.market.positions) >= MAX_SIGNALS:
-                        logger.info(f"⛔ CAPACITY FULL: {len(self.market.positions)}/{MAX_SIGNALS} — skipping remaining picks")
-                        break
+                        return None
 
                     # Skip if already open
                     if symbol in self.market.positions:
-                        continue
+                        return None
 
                     # MICRO CHECK (solo pares ANOMALY)
                     await self.check_micro_entry(symbol, direction, pick)
+                    
+                    # Return pick if entered to remove it from watchlist
+                    if symbol in self.market.positions:
+                        return pick
+                    return None
 
-                    # Remove from watchlist after entry (backtest alignment)
-                    if symbol in self.market.positions and pick in self.daily_watchlist:
+                tasks = [process_pick(p) for p in list(self.daily_watchlist)]
+                results = await asyncio.gather(*tasks)
+
+                # Remove entered picks from watchlist
+                for pick in results:
+                    if pick and pick in self.daily_watchlist:
                         self.daily_watchlist.remove(pick)
-
-                    await asyncio.sleep(1) # Pace requests
 
                 await asyncio.sleep(60)
 
@@ -194,14 +210,22 @@ class TrendBot:
                 logger.error("No tickers found in Universe.")
                 return
 
+            logger.info(f"📥 Downloading history for {len(tickers)} pairs asynchronously...")
             pair_data = {}
-            logger.info(f"📥 Downloading history for {len(tickers)} pairs...")
             
-            for symbol in tickers:
-                df = await self.market.get_klines(symbol, interval='15m', limit=490)
-                if not df.empty:
-                    pair_data[symbol] = df
-                await asyncio.sleep(0.05)
+            # Use Semaphore to limit concurrency and avoid API rate limits
+            sem = asyncio.Semaphore(15)
+            
+            async def fetch_symbol(symbol):
+                async with sem:
+                    df = await self.market.get_klines(symbol, interval='15m', limit=490)
+                    if not df.empty:
+                        pair_data[symbol] = df
+                    # Small delay to pace requests
+                    await asyncio.sleep(0.05)
+                    
+            tasks = [fetch_symbol(sym) for sym in tickers]
+            await asyncio.gather(*tasks)
                 
             logger.info(f"📊 Analyzing {len(pair_data)} pairs...")
             
@@ -676,7 +700,12 @@ class TrendBot:
                     risk_dist = abs(current_price - pos['sl'])
                     if risk_dist > 0:
                         new_margin = (risk_amt / (risk_dist / current_price)) / LEVERAGE
-                        new_margin = min(new_margin, equity * MAX_CAPITAL_PER_TRADE)
+                        
+                        # Enforce MAX_CAPITAL_PER_TRADE cumulatively across all entries
+                        max_allowed_total = equity * MAX_CAPITAL_PER_TRADE
+                        max_allowed_new = max(0.0, max_allowed_total - state['total_amount'])
+                        new_margin = min(new_margin, max_allowed_new)
+                        
                         notional = new_margin * LEVERAGE
                         if notional >= 5:
                             success = await self.scale_into_position(symbol, pos['side'], notional)
