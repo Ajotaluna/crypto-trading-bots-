@@ -17,7 +17,7 @@ COMMISSION = 0.04 / 100       # 0.04% per side
 # Risk: 1% per entry x 3 entries = 3% total per signal
 RISK_PER_ENTRY = 0.01         # 1% equity per entry
 MAX_CAPITAL_PER_TRADE = 0.10  # 10% max position size per entry
-MAX_SIGNALS = 3               # Max concurrent signals being tracked
+MAX_SIGNALS = 5               # Max concurrent signals being tracked
 MAX_HOLD_CANDLES = 96         # 24h max hold (reduced from 160)
 DAILY_LOSS_CAP = 0.08         # 8% daily loss cap
 

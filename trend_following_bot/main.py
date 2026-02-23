@@ -497,17 +497,7 @@ class TrendBot:
                     if kf_price > 0 and atr_val > 0 and (close_p - kf_price) / atr_val > 3.0:
                         reject_reasons.append(f'OVEREXTENDED={((close_p-kf_price)/atr_val):.1f}ATR')
                 else:  # SHORT
-                    if candle_color != 'RED': reject_reasons.append(f'Candle={candle_color}')
-                    if rsi_val < 18: reject_reasons.append(f'RSI_LOW={rsi_val:.1f}')
-                    if rsi_val > 75: reject_reasons.append(f'RSI_HIGH={rsi_val:.1f}')
-                    if close_p > kf_price: reject_reasons.append(f'ABOVE_KALMAN(price={close_p:.4f}>kf={kf_price:.4f})')
-                    if kf_slope > 0: reject_reasons.append(f'KF_SLOPE_POS={kf_slope:.6f}')
-                    if entropy_val > 0.78: reject_reasons.append(f'HIGH_ENTROPY={entropy_val:.3f}')
-                    if kf_price > 0 and atr_val > 0 and (kf_price - close_p) / atr_val > 3.0:
-                        reject_reasons.append(f'OVEREXTENDED={((kf_price-close_p)/atr_val):.1f}ATR')
-                
-                reasons_str = ', '.join(reject_reasons) if reject_reasons else 'UNKNOWN'
-                logger.info(f"❌ REJECTED: {symbol} ({direction}) | Reason: {reasons_str}")
+                    pass
                 
         except Exception as e:
             logger.error(f"Micro Scan Error {symbol}: {e}")
