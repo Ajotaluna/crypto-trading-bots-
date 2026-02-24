@@ -69,6 +69,7 @@ _legacy_archive/
 fortress_bot/
 trend_following_bot/legacy_backup/
 trend_following_bot/strategy_lab/
+trend_following_bot/nascent_scanner/
 *_backup.py
 *_backup*/
 *.bak

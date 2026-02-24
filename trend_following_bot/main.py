@@ -484,20 +484,6 @@ class TrendBot:
                 }
                 
                 await self.execute_trade(symbol, signal, df_indicators)
-            else:
-                # Log WHY it was rejected
-                reject_reasons = []
-                if direction == 'LONG':
-                    if candle_color != 'GREEN': reject_reasons.append(f'Candle={candle_color}')
-                    if rsi_val > 72: reject_reasons.append(f'RSI_HIGH={rsi_val:.1f}')
-                    if rsi_val < 25: reject_reasons.append(f'RSI_LOW={rsi_val:.1f}')
-                    if close_p < kf_price: reject_reasons.append(f'BELOW_KALMAN(price={close_p:.4f}<kf={kf_price:.4f})')
-                    if kf_slope < 0: reject_reasons.append(f'KF_SLOPE_NEG={kf_slope:.6f}')
-                    if entropy_val > 0.78: reject_reasons.append(f'HIGH_ENTROPY={entropy_val:.3f}')
-                    if kf_price > 0 and atr_val > 0 and (close_p - kf_price) / atr_val > 3.0:
-                        reject_reasons.append(f'OVEREXTENDED={((close_p-kf_price)/atr_val):.1f}ATR')
-                else:  # SHORT
-                    pass
                 
         except Exception as e:
             logger.error(f"Micro Scan Error {symbol}: {e}")
