@@ -27,7 +27,6 @@ from trading_strategy import (
     calculate_indicators, 
     PositionManager,
     PIDController,
-    RiskManager,
     MAX_SCORE,
     TOP_N,
     INITIAL_CAPITAL,
