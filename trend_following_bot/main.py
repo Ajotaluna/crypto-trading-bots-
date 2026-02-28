@@ -86,12 +86,14 @@ class TrendBot:
 
         # ThreadPool & Locks
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
-        self.entry_lock = asyncio.Lock()
 
     async def start(self):
         """Main Entry Point & Orchestrator"""
         mode_str = "PRODUCTION (REAL MONEY)" if not self.market.is_dry_run else "DRY RUN (PAPER TRADING)"
         logger.info(f"\n{'='*50}\n>>> STARTING TREND BOT V5 (DOUBLE FUNNEL): {mode_str} <<<\n{'='*50}")
+        
+        # Initialize the global entry lock here to attach it to the running event loop
+        self.entry_lock = asyncio.Lock()
         
         # 1. Initialize Balance
         if not self.market.is_dry_run:
@@ -435,9 +437,7 @@ class TrendBot:
                         logger.warning(f"WHALE ENTRY {sym}: no hay datos")
                         continue
 
-                    df_ind = await asyncio.get_running_loop().run_in_executor(
-                        self.executor, calculate_indicators, df
-                    )
+                    df_ind = await asyncio.to_thread(calculate_indicators, df)
                     if df_ind is None or df_ind.empty or 'atr' not in df_ind.columns:
                         logger.warning(f"WHALE ENTRY {sym}: falló el cálculo de ATR")
                         continue
