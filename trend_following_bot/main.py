@@ -168,9 +168,9 @@ class TrendBot:
 
                 # --- B. MICRO SCAN (Intraday) ---
                 if not self.daily_watchlist:
-                    logger.warning("⚠️ Watchlist empty. Retrying Macro Scan...")
+                    logger.warning("⚠️ Watchlist empty. Retrying Macro Scan in 5 minutes...")
                     await self.run_macro_scan()
-                    await asyncio.sleep(60)
+                    await asyncio.sleep(300) # Wait 5 minutes to prevent IP bans if no whales found
                     continue
 
                 logger.info(f"🔍 MICRO SCAN: Checking {len(self.daily_watchlist)} watchlist picks | Open: {len(self.market.positions)}/{MAX_SIGNALS}")
@@ -269,7 +269,7 @@ class TrendBot:
 
             logger.info(
                 f"✅ WATCHLIST FINAL: {len(self.daily_watchlist)} pares "
-                f"(anomaly={len(picks)} + whale={added_whale} únicos)"
+                f"(whale={added_whale} únicos)"
             )
             for p in self.daily_watchlist:
                 layer = p.get('layer', 'ANOMALY')
