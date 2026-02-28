@@ -679,7 +679,7 @@ class TrendBot:
             # 1. Get Fresh Market Data (ATR, Kalman, Price)
             try:
                 df = await self.market.get_klines(symbol, interval='15m', limit=50)
-                if df.empty: continue
+                if df.empty: return
                 
                 loop = asyncio.get_running_loop()
                 df = await loop.run_in_executor(self.executor, calculate_indicators, df)
@@ -688,10 +688,10 @@ class TrendBot:
                 atr = float(df['atr'].iloc[-1])
                 kf_price = float(df['kf_price'].iloc[-1])
                 
-                if current_price == 0: continue
+                if current_price == 0: return
             except Exception as e:
                 logger.error(f"Data Error {symbol}: {e}")
-                continue
+                return
             
             # ATR fallback (matches backtest)
             if atr <= 0:
@@ -725,7 +725,7 @@ class TrendBot:
                 logger.warning(f"🛑 {reason}: {symbol}")
                 await self.market.close_position(symbol, reason)
                 self.pos_state.pop(symbol, None)
-                continue
+                return
             
             # --- 2. CHECK SCALING (before BE lock, matches backtest) ---
             if state['scale_level'] < MAX_SCALE and not state['be_locked']:
@@ -795,12 +795,12 @@ class TrendBot:
                     # COOLDOWN: Don't spam SL updates (minimum 30s between updates)
                     elapsed_since_update = time.time() - state.get('last_sl_update', 0)
                     if elapsed_since_update < 30:
-                        continue
+                        return
                     
                     # MINIMUM CHANGE: Only update if SL moves by at least 0.1%
                     change_pct = abs(trail_sl - pos['sl']) / pos['sl'] * 100 if pos['sl'] > 0 else 999
                     if change_pct < 0.1:
-                        continue
+                        return
                     
                     await self.market.update_sl(symbol, trail_sl)
                     state['last_sl_update'] = time.time()
