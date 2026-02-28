@@ -32,6 +32,7 @@ class MarketData:
         self.positions = {}
         self.balance = 1000.0
         self.base_url = "https://fapi.binance.com"
+        self._cached_universe = None  # Cache for heavy universe scan
         
         # --- CONNECTION SHIELD (Anti-Disconnect) ---
         self.session = requests.Session()
@@ -336,8 +337,15 @@ class MarketData:
         """
         Scanning the market for liquidity (Fallback Mode).
         """
+        if self._cached_universe is not None:
+             return self._cached_universe
+
         try:
-            resp = self.session.get(f"{self.base_url}/fapi/v1/ticker/24hr", timeout=10)
+            url = f"{self.base_url}/fapi/v1/ticker/24hr"
+            def _fetch():
+                return self.session.get(url, timeout=10)
+            
+            resp = await asyncio.to_thread(_fetch)
             if resp.status_code == 200:
                 data = resp.json()
                 valid_pairs = []
@@ -350,7 +358,8 @@ class MarketData:
                     except: continue
 
                 valid_pairs.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
-                return [x['symbol'] for x in valid_pairs[:limit]]
+                self._cached_universe = [x['symbol'] for x in valid_pairs[:limit]]
+                return self._cached_universe
         except Exception as e:
             logger.error(f"Fallback Scan Failed: {e}")
             return []

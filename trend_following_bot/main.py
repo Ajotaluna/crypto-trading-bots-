@@ -168,9 +168,8 @@ class TrendBot:
 
                 # --- B. MICRO SCAN (Intraday) ---
                 if not self.daily_watchlist:
-                    logger.warning("⚠️ Watchlist empty. Retrying Macro Scan in 5 minutes...")
-                    await self.run_macro_scan()
-                    await asyncio.sleep(300) # Wait 5 minutes to prevent IP bans if no whales found
+                    logger.debug("Silencio: Watchlist vacía. Esperando al próximo ciclo táctico...")
+                    await asyncio.sleep(60)
                     continue
 
                 logger.info(f"🔍 MICRO SCAN: Checking {len(self.daily_watchlist)} watchlist picks | Open: {len(self.market.positions)}/{MAX_SIGNALS}")
