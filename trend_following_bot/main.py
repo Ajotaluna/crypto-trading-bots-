@@ -485,9 +485,7 @@ class TrendBot:
                 logger.warning(f"📭 {symbol}: No klines data available")
                 return
 
-            loop = asyncio.get_running_loop()
-            df_indicators = await loop.run_in_executor(
-                self.executor,
+            df_indicators = await asyncio.to_thread(
                 calculate_indicators,
                 df
             )
@@ -502,8 +500,7 @@ class TrendBot:
             atr_val = float(curr['atr'])
             candle_color = 'GREEN' if close_p > float(curr['open']) else 'RED'
             
-            is_valid = await loop.run_in_executor(
-                self.executor,
+            is_valid = await asyncio.to_thread(
                 confirm_entry,
                 df_indicators,
                 direction
@@ -680,8 +677,7 @@ class TrendBot:
                 df = await self.market.get_klines(symbol, interval='15m', limit=50)
                 if df.empty: return
                 
-                loop = asyncio.get_running_loop()
-                df = await loop.run_in_executor(self.executor, calculate_indicators, df)
+                df = await asyncio.to_thread(calculate_indicators, df)
                 
                 current_price = float(df['close'].iloc[-1])
                 atr = float(df['atr'].iloc[-1])
