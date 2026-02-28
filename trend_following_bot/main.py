@@ -219,42 +219,10 @@ class TrendBot:
                 await asyncio.sleep(60)
 
     async def run_macro_scan(self):
-        """Runs AnomalyScanner on the entire market to pick the daily Top N."""
+        """Runs Whale Scanner exclusively (Anomaly Scanner disabled by user)."""
         try:
-            logger.info("🔭 MACRO SCAN: Fetching market data...")
-            
-            tickers = await self.market.get_trading_universe() 
-            if not tickers:
-                logger.error("No tickers found in Universe.")
-                return
-
-            logger.info(f"📥 Downloading history for {len(tickers)} pairs asynchronously...")
-            pair_data = {}
-            
-            # Use Semaphore to limit concurrency and avoid API rate limits
-            sem = asyncio.Semaphore(15)
-            
-            async def fetch_symbol(symbol):
-                async with sem:
-                    df = await self.market.get_klines(symbol, interval='15m', limit=490)
-                    if not df.empty:
-                        pair_data[symbol] = df
-                    # Small delay to pace requests
-                    await asyncio.sleep(0.05)
-                    
-            tasks = [fetch_symbol(sym) for sym in tickers]
-            await asyncio.gather(*tasks)
-                
-            logger.info(f"📊 Analyzing {len(pair_data)} pairs...")
-            
-            picks = self.scanner.score_universe(pair_data, -1, top_n=TOP_N)
-
-            # Filter by MAX_SCORE (matches backtest)
-            self.daily_watchlist = [p for p in picks if p['score'] < MAX_SCORE]
-
-            logger.info(f"✅ MACRO (ANOMALY): {len(self.daily_watchlist)} candidatos")
-            for p in self.daily_watchlist:
-                logger.info(f"  > {p['symbol']} ({p['direction']}) | Score: {p['score']} | {p['reasons']}")
+            self.daily_watchlist = []
+            logger.info("🔭 MACRO SCAN: Anomaly Scanner (Física de Origen) is DISABLED.")
 
             # ─── WHALE SCAN: top-15 adicionales ──────────────────────
             logger.info("🐋 WHALE SCAN: escaneando todo el mercado en batches de 50...")
