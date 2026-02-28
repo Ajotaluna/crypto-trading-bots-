@@ -123,8 +123,6 @@ class MarketData:
         headers = {'X-MBX-APIKEY': self.api_key}
         url = f"{self.base_url}{endpoint}"
         
-        loop = asyncio.get_running_loop()
-        
         def _req():
             try:
                 if method == 'GET':
@@ -137,7 +135,7 @@ class MarketData:
                 logger.error(f"Net Error: {e}")
                 return None
 
-        resp = await loop.run_in_executor(None, _req)
+        resp = await asyncio.to_thread(_req)
         
         if resp:
             try:
@@ -368,8 +366,6 @@ class MarketData:
         if end_time:
              params['endTime'] = end_time
         
-        loop = asyncio.get_running_loop()
-        
         def _fetch_and_parse():
             try:
                 # Use Session for Retry
@@ -395,7 +391,7 @@ class MarketData:
                     logger.error(f"Error fetching klines for {symbol}: {e}")
             return pd.DataFrame()
 
-        return await loop.run_in_executor(None, _fetch_and_parse)
+        return await asyncio.to_thread(_fetch_and_parse)
 
     async def get_btc_trend(self):
         """
@@ -432,7 +428,6 @@ class MarketData:
         url = f"{self.base_url}/fapi/v1/openInterestHist"
         params = {'symbol': symbol, 'period': period, 'limit': 30}
         
-        loop = asyncio.get_running_loop()
         def _fetch():
             try:
                 r = self.session.get(url, params=params, timeout=10)
@@ -440,7 +435,7 @@ class MarketData:
             except: pass
             return []
             
-        data = await loop.run_in_executor(None, _fetch)
+        data = await asyncio.to_thread(_fetch)
         return data
     
     # --- CRASH DETECTION LOGIC MOVED TO SENTIMENT ANALYZER (Removed legacy functions here) ---
