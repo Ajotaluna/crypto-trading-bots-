@@ -17,7 +17,7 @@ COMMISSION = 0.04 / 100       # 0.04% per side
 # Risk: 1% per entry x 3 entries = 3% total per signal
 RISK_PER_ENTRY = 0.01         # 1% equity per entry
 MAX_CAPITAL_PER_TRADE = 0.10  # 10% max position size per entry
-MAX_SIGNALS = 5               # Max concurrent signals being tracked
+MAX_SIGNALS = 3               # Max concurrent signals being tracked
 MAX_HOLD_CANDLES = 96         # 24h max hold (reduced from 160)
 DAILY_LOSS_CAP = 0.08         # 8% daily loss cap
 
@@ -260,24 +260,23 @@ def confirm_entry(df, direction):
         if close_p <= curr['open']:
             return False
             
-        # 2. RSI Check: Not overbought/oversold extremes
-        if curr['rsi'] > 72 or curr['rsi'] < 25:
+        # 2. RSI Check: Relaxed for explosive starts
+        if curr['rsi'] > 85 or curr['rsi'] < 20:
             return False
             
-        # 3. KALMAN TREND CHECK (Replaces EMA)
-        # Price must be above Kalman baseline
+        # 3. KALMAN TREND CHECK (Relaxed)
+        # We only care that price is explosive (above baseline). 
+        # We DO NOT wait for the slow kf_slope to turn positive yet.
         if close_p < kf_price:
-            return False
-        # Trend velocity must be positive
-        if kf_slope < 0:
             return False
 
         # 4. ENTROPY FILTER (Chaos Check)
-        if entropy > 0.78:
+        # 0.95 allows hyper-volatile Point 0 explosive action.
+        if entropy > 0.95:
             return False
             
-        # 5. Extension check (don't buy if too far extended from Kalman)
-        if kf_price > 0 and (close_p - kf_price) / atr > 3.0:
+        # 5. Extension check (don't buy if completely unhinged > 4.5 ATRs away)
+        if kf_price > 0 and (close_p - kf_price) / atr > 4.5:
             return False
             
         return True
@@ -287,24 +286,21 @@ def confirm_entry(df, direction):
         if close_p >= curr['open']:
             return False
             
-        # 2. RSI Check (relaxed lower bound for bearish momentum)
-        if curr['rsi'] < 18 or curr['rsi'] > 75:
+        # 2. RSI Check: Relaxed for explosive dumps
+        if curr['rsi'] < 15 or curr['rsi'] > 80:
             return False
             
-        # 3. KALMAN TREND CHECK
-        # Price below Kalman
+        # 3. KALMAN TREND CHECK (Relaxed)
+        # Price below Kalman baseline is enough for early spark.
         if close_p > kf_price:
-            return False
-        # Negative velocity
-        if kf_slope > 0:
             return False
 
         # 4. ENTROPY FILTER
-        if entropy > 0.78:
+        if entropy > 0.95:
             return False
             
-        # 5. Extension check
-        if kf_price > 0 and (kf_price - close_p) / atr > 3.0:
+        # 5. Extension check (wider limit)
+        if kf_price > 0 and (kf_price - close_p) / atr > 4.5:
             return False
             
         return True
@@ -393,7 +389,9 @@ class PositionManager:
         # Kp=0.4: If Price is 2 ATR above Kalman, Error=-2. Output=-0.8. Trail = 2.0 - 0.8 = 1.2.
         # Kd=0.1: Reactions to speed.
         
-        pid = PIDController(Kp=0.4, Ki=0.0, Kd=0.1, setpoint=0, output_limits=(-0.8, 0.5))
+        # Kp=0.4 modified to be a bit gentler:
+        # Don't strangle massive pumps (was Output=-0.8 limit). Limit to -0.3.
+        pid = PIDController(Kp=0.2, Ki=0.0, Kd=0.1, setpoint=0, output_limits=(-0.3, 0.5))
         
         self.positions[symbol] = {
             'symbol': symbol,
@@ -493,9 +491,9 @@ class PositionManager:
                 closed.append(self._close_position(symbol, exit_price, reason, candle_idx))
                 continue
 
-            # 2. BREAKEVEN LOCK
+            # 2. BREAKEVEN LOCK (Delayed slightly for nascent volatility)
             hold_candles = candle_idx - pos['entry_idx']
-            if not pos['be_locked'] and pnl_atr >= BE_LOCK_ATR:
+            if not pos['be_locked'] and pnl_atr >= 2.0:
                 buffer = pos['avg_price'] * 0.002
                 if pos['direction'] == 'LONG':
                     pos['sl'] = pos['avg_price'] + buffer
@@ -518,8 +516,8 @@ class PositionManager:
                 # Base is user config
                 current_trail_atr = TRAIL_DISTANCE_ATR + pid_adjust
                 
-                # Hard Limits for sanity
-                current_trail_atr = max(0.5, min(4.0, current_trail_atr))
+                # Hard Limits for sanity (Give it minimum 1.5 ATR room to breathe during profit swings)
+                current_trail_atr = max(1.5, min(4.0, current_trail_atr))
 
                 if pos['direction'] == 'LONG':
                     trail_sl = pos['best_price'] - (atr_val * current_trail_atr)
@@ -591,62 +589,3 @@ class PositionManager:
             'be_locked': pos['be_locked'],
             'scale_level': pos['scale_level'],
         }
-
-
-# ================================================================
-# RISK MANAGER (Stateless for Production)
-# ================================================================
-class RiskManager:
-    """
-    Stateless risk logic for re-use in Production Main Loop.
-    """
-    @staticmethod
-    def check_exit_conditions(position_data, current_price, current_atr):
-        """
-        Evaluates active position for SL, TP, BE Lock, and Trailing.
-        Returns: (action, new_sl, reason)
-        action: 'CLOSE', 'UPDATE_SL', or 'HOLD'
-        """
-        # Unpack
-        side = position_data.get('side', 'LONG') # Main uses 'side', Strategy uses 'direction'
-        if 'direction' in position_data: side = position_data['direction']
-        
-        entry_price = float(position_data['entry_price'])
-        current_sl = float(position_data['sl'])
-        be_locked = position_data.get('be_locked', False)
-        
-        # 1. Check Hard Stop
-        if side == 'LONG':
-            if current_price <= current_sl: return 'CLOSE', current_sl, 'STOP_LOSS'
-        else:
-            if current_price >= current_sl: return 'CLOSE', current_sl, 'STOP_LOSS'
-
-        # 2. Check Trailing / BE
-        if current_atr <= 0: return 'HOLD', current_sl, None
-        
-        pnl_atr = ((current_price - entry_price) if side == 'LONG' else (entry_price - current_price)) / current_atr
-        
-        new_sl = current_sl
-        updated = False
-        
-        # BE LOCK (1.5 ATR)
-        if pnl_atr >= 1.5 and not be_locked:
-            buffer = current_price * 0.001
-            if side == 'LONG': new_sl = entry_price + buffer
-            else: new_sl = entry_price - buffer
-            return 'UPDATE_SL', new_sl, 'BE_LOCK'
-            
-        # DYNAMIC TRAILING (Only if Locked)
-        # Strategy: Trail 2.0 ATR
-        if be_locked:
-            trail_dist = 2.0 * current_atr
-            if side == 'LONG':
-                potential_sl = current_price - trail_dist
-                if potential_sl > current_sl:
-                    return 'UPDATE_SL', potential_sl, 'TRAILING_UPDATE'
-            else:
-                potential_sl = current_price + trail_dist
-                if potential_sl < current_sl:
-                    return 'UPDATE_SL', potential_sl, 'TRAILING_UPDATE'
-                    
-        return 'HOLD', current_sl, None

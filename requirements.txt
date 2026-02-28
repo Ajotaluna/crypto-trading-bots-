@@ -7,3 +7,5 @@ scipy
 urllib3
 python-dotenv
 ta
+aiohttp
+websockets

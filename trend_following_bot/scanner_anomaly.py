@@ -1,351 +1,228 @@
 """
-Anomaly Scanner V2B — Bidirectional: LONG + SHORT signals.
+Raw Macro Scanner — Indiscriminate Market Observer.
 
-LONG signals (same as V2):
-- Volume anomaly + top relative strength + range breakout = BUY
-
-SHORT signals (mirror/inverse):
-- Volume anomaly + BOTTOM relative strength + range BREAKDOWN = SELL
-
-Philosophy: Market anomalies work in BOTH directions. If a pair is
-unusually weak with heavy volume, it's likely to continue falling.
+Phase 1: REJECTION (Filters out trends that are >4h old)
+Phase 2: SCORING (Grades the surviving point-0 candidates based on Kick, Fuel, and Breakout)
 """
 import numpy as np
 import pandas as pd
 
 
 class AnomalyScanner:
-    """Scores all pairs RELATIVE to the market — both LONG and SHORT."""
+    """Passes all pairs indiscriminately EXCEPT those with established trends."""
+
+    @staticmethod
+    def _is_trend_established(history_df, direction):
+        """
+        Determines if a trend in the given direction has already been
+        established for more than 4 hours (16 candles of 15m).
+        """
+        if len(history_df) < 17:
+            return True # Not enough data
+
+        close = pd.to_numeric(history_df['close'], errors='coerce')
+        ret_4h = (close.iloc[-1] - close.iloc[-17]) / close.iloc[-17] * 100
+        
+        if direction == 'LONG':
+            # If it already rallied >4% in 4h, the trend is mature.
+            if ret_4h >= 4.0: return True
+                
+            # If price has been floating 3% above its 4h moving average, it's mature.
+            ma_4h = close.iloc[-17:].mean()
+            if close.iloc[-1] > ma_4h * 1.03: return True
+                
+        elif direction == 'SHORT':
+            # If it already dumped >4% in 4h, the trend is mature.
+            if ret_4h <= -4.0: return True
+                
+            # If price has been sinking 3% below its 4h moving average, it's mature.
+            ma_4h = close.iloc[-17:].mean()
+            if close.iloc[-1] < ma_4h * 0.97: return True
+                
+        return False
 
     @staticmethod
     def score_universe(pair_data, now_idx, top_n=10, long_ratio=None):
         """
-        Score all pairs for both LONG and SHORT opportunities.
-
-        Args:
-            long_ratio: 0.0-1.0, fraction of slots for longs (rest = shorts)
-                        1.0 = all longs, 0.0 = all shorts
-        Returns: list of top_n picks with direction ('LONG' or 'SHORT'),
-                 scores, and reasons.
+        Scores purely raw pairs using Origin Physics: 
+        Initiator (Kick) + Fuel (RVol) + Barrier Break (Micro-shift)
         """
         metrics = {}
 
         for symbol, df in pair_data.items():
-            if now_idx > len(df):
-                continue
-
+            if now_idx > len(df): continue
+            
+            # Need some history to calculate baselines (~3 days = 288 candles)
             history = df.iloc[:now_idx].copy()
-            if len(history) < 480:
-                continue
+            if len(history) < 96: continue
 
             try:
                 close = pd.to_numeric(history['close'], errors='coerce')
-                volume = pd.to_numeric(history['volume'], errors='coerce')
+                open_p = pd.to_numeric(history['open'], errors='coerce')
                 high = pd.to_numeric(history['high'], errors='coerce')
                 low = pd.to_numeric(history['low'], errors='coerce')
+                volume = pd.to_numeric(history['volume'], errors='coerce')
 
-                if close.isna().sum() > 10 or len(close) < 480:
+                if close.isna().sum() > 5 or len(close) < 96:
                     continue
 
                 # ============================================
-                # METRIC 1: Volume Z-Score (direction-neutral)
+                # PHASE 1: INDISCRIMINATE REJECTION
                 # ============================================
-                lookback = min(len(volume), 2880)
-                vol_history = volume.iloc[-lookback:]
+                long_rejected = AnomalyScanner._is_trend_established(history, 'LONG')
+                short_rejected = AnomalyScanner._is_trend_established(history, 'SHORT')
 
-                daily_vols = []
-                for i in range(0, len(vol_history) - 96, 96):
-                    daily_vols.append(vol_history.iloc[i:i+96].sum())
+                if long_rejected and short_rejected:
+                    continue # Skip if it's already trending hard in both directions (choppy/crazy) 
 
-                vol_24h = volume.iloc[-96:].sum()
-
-                if daily_vols and len(daily_vols) >= 3:
-                    vol_avg = np.mean(daily_vols)
-                    vol_std = np.std(daily_vols)
-                    vol_z = (vol_24h - vol_avg) / vol_std if vol_std > 0 else 0
+                # ============================================
+                # PHASE 2: CALCULATING ORIGIN PHYSICS
+                # ============================================
+                
+                # 1. The Kick (Candle Range Anomaly)
+                # How big is the current/previous candle relative to the last 24h average body?
+                bodies = (close - open_p).abs()
+                avg_body_24h = bodies.iloc[-96:-2].mean() # Average body excluding the current spike
+                
+                # Check the most explosive of the last 2 candles
+                current_kick = bodies.iloc[-1]
+                prev_kick = bodies.iloc[-2]
+                max_kick = max(current_kick, prev_kick)
+                
+                if avg_body_24h > 0:
+                    kick_multiplier = max_kick / avg_body_24h
                 else:
-                    vol_z = 0
+                    kick_multiplier = 0
 
-                # ============================================
-                # METRIC 2: Returns (multiple timeframes)
-                # ============================================
-                ret_24h = (close.iloc[-1] - close.iloc[-96]) / close.iloc[-96] * 100 if len(close) >= 96 else 0
-                ret_12h = (close.iloc[-1] - close.iloc[-48]) / close.iloc[-48] * 100 if len(close) >= 48 else 0
-                ret_6h = (close.iloc[-1] - close.iloc[-24]) / close.iloc[-24] * 100 if len(close) >= 24 else 0
-
-                # ============================================
-                # METRIC 3: Range Position (7-day range)
-                # >90% = near top (long breakout)
-                # <10% = near bottom (short breakdown)
-                # ============================================
-                range_candles = min(len(high), 672)
-                high_7d = high.iloc[-range_candles:].max()
-                low_7d = low.iloc[-range_candles:].min()
-                range_7d = high_7d - low_7d
-
-                if range_7d > 0:
-                    range_pct = (close.iloc[-1] - low_7d) / range_7d * 100
+                # 2. The Fuel (Relative Volume - RVol)
+                # Volume of the last 1 hour vs average historical 1h volume
+                vol_last_1h = volume.iloc[-4:].sum()
+                avg_vol_1h = volume.iloc[-96:].sum() / 24 # Crude but fast 24h hourly average
+                
+                if avg_vol_1h > 0:
+                    rvol = vol_last_1h / avg_vol_1h
                 else:
-                    range_pct = 50
+                    rvol = 0
 
-                # ============================================
-                # METRIC 4: Momentum direction
-                # ============================================
-                # Long acceleration
-                is_accel_up = (
-                    ret_6h > 0 and ret_12h > 0 and
-                    ret_6h > ret_12h * 0.6
-                )
-                # Short acceleration (falling faster)
-                is_accel_down = (
-                    ret_6h < 0 and ret_12h < 0 and
-                    ret_6h < ret_12h * 0.6  # 6h drop is >60% of 12h drop
-                )
+                # 3. Micro-Barrier (Is it breaking the 12h box?)
+                high_12h = high.iloc[-48:-2].max()
+                low_12h = low.iloc[-48:-2].min()
+                range_12h = high_12h - low_12h
 
-                # Volume trend
-                vol_6h = volume.iloc[-24:].sum()
-                vol_prev_6h = volume.iloc[-48:-24].sum()
-                vol_increasing = vol_6h > vol_prev_6h * 1.2 if vol_prev_6h > 0 else False
+                if range_12h > 0:
+                    range_pct_12h = (close.iloc[-1] - low_12h) / range_12h * 100
+                else:
+                    range_pct_12h = 50
 
                 metrics[symbol] = {
-                    'vol_z': vol_z,
-                    'ret_24h': ret_24h,
-                    'ret_12h': ret_12h,
-                    'ret_6h': ret_6h,
-                    'range_pct': range_pct,
-                    'is_accel_up': is_accel_up,
-                    'is_accel_down': is_accel_down,
-                    'vol_increasing': vol_increasing,
+                    'kick_multiplier': kick_multiplier,
+                    'rvol': rvol,
+                    'range_pct_12h': range_pct_12h,
+                    'long_rejected': long_rejected,
+                    'short_rejected': short_rejected
                 }
 
             except Exception:
                 continue
 
-        if not metrics:
-            return []
-
         # ============================================
-        # STEP 2: Relative ranking across ALL pairs
+        # PHASE 3: SCORING TRANSLATION
         # ============================================
         symbols = list(metrics.keys())
-        n = len(symbols)
-
-        # Rank by 24h return (0% = best gainer, 100% = worst loser)
-        by_ret = sorted(symbols, key=lambda s: metrics[s]['ret_24h'], reverse=True)
-        for i, s in enumerate(by_ret):
-            metrics[s]['ret_rank_pct'] = (i / n) * 100
-
-        # ============================================
-        # STEP 2.5: MARKET REGIME DETECTION
-        # Detect if market is mostly bearish/bullish
-        # and apply bonus/penalty to align signals.
-        # ============================================
-        all_returns = [metrics[s]['ret_24h'] for s in symbols]
-        median_ret = np.median(all_returns) if all_returns else 0
-        
-        # Regime classification
-        if median_ret < -1.0:
-            regime = 'BEARISH'
-            regime_bonus_short = 15
-            regime_penalty_long = 10
-        elif median_ret > 1.0:
-            regime = 'BULLISH'
-            regime_bonus_short = 0
-            regime_penalty_long = 0
-        else:
-            regime = 'NEUTRAL'
-            regime_bonus_short = 0
-            regime_penalty_long = 0
-        
-        # Bullish bonus (mirror logic)
-        regime_bonus_long = 15 if regime == 'BULLISH' else 0
-        regime_penalty_short = 10 if regime == 'BULLISH' else 0
-
-        # ============================================
-        # STEP 3: Score LONG candidates
-        # ============================================
         long_candidates = []
-        for s in symbols:
-            m = metrics[s]
-            score = 0
-            reasons = []
-
-            # Volume Anomaly (0-40 pts)
-            if m['vol_z'] >= 3.0:
-                score += 40
-                reasons.append(f"VOL_EXTREME(z={m['vol_z']:.1f})")
-            elif m['vol_z'] >= 2.0:
-                score += 30
-                reasons.append(f"VOL_SPIKE(z={m['vol_z']:.1f})")
-            elif m['vol_z'] >= 1.5:
-                score += 15
-                reasons.append(f"VOL_ELEVATED(z={m['vol_z']:.1f})")
-
-            # Relative Strength — TOP performers (0-40 pts)
-            if m['ret_rank_pct'] <= 2:
-                score += 40
-                reasons.append(f"RS_TOP2({m['ret_24h']:+.1f}%)")
-            elif m['ret_rank_pct'] <= 5:
-                score += 30
-                reasons.append(f"RS_TOP5({m['ret_24h']:+.1f}%)")
-            elif m['ret_rank_pct'] <= 10:
-                score += 20
-                reasons.append(f"RS_TOP10({m['ret_24h']:+.1f}%)")
-            elif m['ret_rank_pct'] <= 15:
-                score += 10
-                reasons.append(f"RS_TOP15({m['ret_24h']:+.1f}%)")
-
-            # Range Breakout — near 7-day HIGH (0-30 pts)
-            if m['range_pct'] >= 95:
-                score += 30
-                reasons.append("BREAKOUT_7D")
-            elif m['range_pct'] >= 85:
-                score += 20
-                reasons.append("NEAR_BREAKOUT")
-            elif m['range_pct'] >= 75:
-                score += 10
-                reasons.append("UPPER_RANGE")
-
-            # Acceleration up (0-15 pts)
-            if m['is_accel_up']:
-                score += 15
-                reasons.append("ACCEL_UP")
-
-            # Volume confirmation (0-10 pts)
-            if m['vol_increasing'] and score >= 20:
-                score += 10
-                reasons.append("VOL_RISING")
-
-            # Combo bonus
-            signal_count = sum([
-                m['vol_z'] >= 1.5,
-                m['ret_rank_pct'] <= 15,
-                m['range_pct'] >= 75,
-            ])
-            if signal_count >= 3:
-                score += 20
-                reasons.append("TRIPLE_LONG")
-            elif signal_count >= 2:
-                score += 10
-                reasons.append("DOUBLE_LONG")
-
-            # Market Regime Adjustment
-            if regime_bonus_long > 0:
-                score += regime_bonus_long
-                reasons.append(f"REGIME_BULL(+{regime_bonus_long})")
-            if regime_penalty_long > 0:
-                score -= regime_penalty_long
-                reasons.append(f"REGIME_BEAR(-{regime_penalty_long})")
-
-            if score > 0:
-                long_candidates.append({
-                    'symbol': s,
-                    'score': score,
-                    'reasons': ", ".join(reasons),
-                    'direction': 'LONG',
-                    'layer': 'LONG',
-                    'ret_24h': m['ret_24h'],
-                    'vol_z': m['vol_z'],
-                    'breakout_pct': m['range_pct'],
-                })
-
-        # ============================================
-        # STEP 4: Score SHORT candidates (INVERSE)
-        # ============================================
         short_candidates = []
+
         for s in symbols:
             m = metrics[s]
-            score = 0
-            reasons = []
+            
+            # --- EVALUATE LONG POINT 0 ---
+            if not m['long_rejected']:
+                score = 0
+                reasons = []
 
-            # Volume Anomaly — same threshold (0-40 pts)
-            if m['vol_z'] >= 3.0:
-                score += 40
-                reasons.append(f"VOL_EXTREME(z={m['vol_z']:.1f})")
-            elif m['vol_z'] >= 2.0:
-                score += 30
-                reasons.append(f"VOL_SPIKE(z={m['vol_z']:.1f})")
-            elif m['vol_z'] >= 1.5:
-                score += 15
-                reasons.append(f"VOL_ELEVATED(z={m['vol_z']:.1f})")
+                # Kick (0-40 pts)
+                if m['kick_multiplier'] > 5.0:
+                    score += 40
+                    reasons.append(f"KICK_MASSIVE({m['kick_multiplier']:.1f}x)")
+                elif m['kick_multiplier'] > 3.0:
+                    score += 25
+                    reasons.append(f"KICK_STRONG({m['kick_multiplier']:.1f}x)")
+                elif m['kick_multiplier'] > 1.5:
+                    score += 10
+                    reasons.append(f"KICK_MILD({m['kick_multiplier']:.1f}x)")
 
-            # Relative Weakness — BOTTOM performers (0-40 pts)
-            if m['ret_rank_pct'] >= 98:  # Bottom 2%
-                score += 40
-                reasons.append(f"RW_BOT2({m['ret_24h']:+.1f}%)")
-            elif m['ret_rank_pct'] >= 95:  # Bottom 5%
-                score += 30
-                reasons.append(f"RW_BOT5({m['ret_24h']:+.1f}%)")
-            elif m['ret_rank_pct'] >= 90:  # Bottom 10%
-                score += 20
-                reasons.append(f"RW_BOT10({m['ret_24h']:+.1f}%)")
-            elif m['ret_rank_pct'] >= 85:  # Bottom 15%
-                score += 10
-                reasons.append(f"RW_BOT15({m['ret_24h']:+.1f}%)")
+                # Fuel / RVol (0-35 pts)
+                if m['rvol'] > 4.0:
+                    score += 35
+                    reasons.append(f"RVOL_EXPLOSIVE({m['rvol']:.1f}x)")
+                elif m['rvol'] > 2.0:
+                    score += 20
+                    reasons.append(f"RVOL_HIGH({m['rvol']:.1f}x)")
 
-            # Range Breakdown — near 7-day LOW (0-30 pts)
-            if m['range_pct'] <= 5:
-                score += 30
-                reasons.append("BREAKDOWN_7D")
-            elif m['range_pct'] <= 15:
-                score += 20
-                reasons.append("NEAR_BREAKDOWN")
-            elif m['range_pct'] <= 25:
-                score += 10
-                reasons.append("LOWER_RANGE")
+                # Barrier Break (0-25 pts)
+                if m['range_pct_12h'] >= 95:
+                    score += 25
+                    reasons.append("MICRO_BREAKOUT_UP")
+                elif m['range_pct_12h'] >= 85:
+                    score += 10
+                    reasons.append("TESTING_HIGHS")
 
-            # Acceleration DOWN (0-15 pts)
-            if m['is_accel_down']:
-                score += 15
-                reasons.append("ACCEL_DOWN")
+                # You MUST have some kick and some fuel to be valid (noise reduction)
+                if score > 0 and m['kick_multiplier'] > 1.2:
+                    long_candidates.append({
+                        'symbol': s,
+                        'score': score,
+                        'reasons': ", ".join(reasons),
+                        'direction': 'LONG',
+                        'layer': 'RAW'
+                    })
 
-            # Volume confirmation (0-10 pts)
-            if m['vol_increasing'] and score >= 20:
-                score += 10
-                reasons.append("VOL_RISING")
+            # --- EVALUATE SHORT POINT 0 ---
+            if not m['short_rejected']:
+                score = 0
+                reasons = []
 
-            # Combo bonus
-            signal_count = sum([
-                m['vol_z'] >= 1.5,
-                m['ret_rank_pct'] >= 85,
-                m['range_pct'] <= 25,
-            ])
-            if signal_count >= 3:
-                score += 20
-                reasons.append("TRIPLE_SHORT")
-            elif signal_count >= 2:
-                score += 10
-                reasons.append("DOUBLE_SHORT")
+                # Kick (0-40 pts) - Direction agnostic since bodies are absolute lengths
+                if m['kick_multiplier'] > 5.0:
+                    score += 40
+                    reasons.append(f"KICK_MASSIVE({m['kick_multiplier']:.1f}x)")
+                elif m['kick_multiplier'] > 3.0:
+                    score += 25
+                    reasons.append(f"KICK_STRONG({m['kick_multiplier']:.1f}x)")
+                elif m['kick_multiplier'] > 1.5:
+                    score += 10
+                    reasons.append(f"KICK_MILD({m['kick_multiplier']:.1f}x)")
 
-            # Market Regime Adjustment
-            if regime_bonus_short > 0:
-                score += regime_bonus_short
-                reasons.append(f"REGIME_BEAR(+{regime_bonus_short})")
-            if regime_penalty_short > 0:
-                score -= regime_penalty_short
-                reasons.append(f"REGIME_BULL(-{regime_penalty_short})")
+                # Fuel / RVol (0-35 pts)
+                if m['rvol'] > 4.0:
+                    score += 35
+                    reasons.append(f"RVOL_EXPLOSIVE({m['rvol']:.1f}x)")
+                elif m['rvol'] > 2.0:
+                    score += 20
+                    reasons.append(f"RVOL_HIGH({m['rvol']:.1f}x)")
 
-            if score > 0:
-                short_candidates.append({
-                    'symbol': s,
-                    'score': score,
-                    'reasons': ", ".join(reasons),
-                    'direction': 'SHORT',
-                    'layer': 'SHORT',
-                    'ret_24h': m['ret_24h'],
-                    'vol_z': m['vol_z'],
-                    'breakout_pct': m['range_pct'],
-                })
+                # Barrier Break DOWN (0-25 pts)
+                if m['range_pct_12h'] <= 5:
+                    score += 25
+                    reasons.append("MICRO_BREAKDOWN_DOWN")
+                elif m['range_pct_12h'] <= 15:
+                    score += 10
+                    reasons.append("TESTING_LOWS")
+
+                if score > 0 and m['kick_multiplier'] > 1.2:
+                    short_candidates.append({
+                        'symbol': s,
+                        'score': score,
+                        'reasons': ", ".join(reasons),
+                        'direction': 'SHORT',
+                        'layer': 'RAW'
+                    })
 
         # ============================================
-        # STEP 5: Build mixed roster (LONG + SHORT)
+        # COMPUTE ROSTER
         # ============================================
-        
-        # New "Meritocratic" Mode (Dynamic Ratio)
         if long_ratio is None:
-            # Combine all
             all_candidates = long_candidates + short_candidates
-            # Sort by score desc
             all_candidates.sort(key=lambda x: x['score'], reverse=True)
             
             roster = []
@@ -359,27 +236,20 @@ class AnomalyScanner:
                     selected_symbols.add(pick['symbol'])
                     
             return roster
-
-        # Legacy "Fixed Quota" Mode
         else:
             long_slots = max(0, int(top_n * long_ratio))
-            if long_ratio >= 1.0:
-                long_slots = top_n
+            if long_ratio >= 1.0: long_slots = top_n
             short_slots = top_n - long_slots
 
             long_candidates.sort(key=lambda x: x['score'], reverse=True)
             short_candidates.sort(key=lambda x: x['score'], reverse=True)
 
             roster = []
-            # Add top longs
-            for pick in long_candidates[:long_slots]:
-                roster.append(pick)
-
-            # Add top shorts (avoid duplicates)
+            for pick in long_candidates[:long_slots]: roster.append(pick)
             selected_symbols = set(p['symbol'] for p in roster)
+            
             for pick in short_candidates:
-                if len(roster) >= top_n:
-                    break
+                if len(roster) >= top_n: break
                 if pick['symbol'] not in selected_symbols:
                     roster.append(pick)
                     selected_symbols.add(pick['symbol'])

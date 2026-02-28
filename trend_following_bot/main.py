@@ -21,6 +21,7 @@ from blacklist_manager import BlacklistManager
 from scanner_anomaly import AnomalyScanner
 from whale_market_scanner import scan_whale_universe
 from whale_watcher import WhaleWatcher
+from orderbook_streamer import OrderbookStreamer
 from trading_strategy import (
     confirm_entry, 
     calculate_indicators, 
@@ -74,6 +75,8 @@ class TrendBot:
         # Whale scanner
         self.whale_watchlist: list = []   # Top-15 pares con señal de ballena
         self.whale_watcher = WhaleWatcher()
+        
+        self.ob_streamer = OrderbookStreamer(depth=20, update_speed="100ms")
 
         self.daily_watchlist = []  # Top-10 anomaly + hasta 15 whale (sin duplicados)
         self.pos_state = {}  # Local state tracker (backtest PositionManager alignment)
@@ -82,8 +85,9 @@ class TrendBot:
         self.tracker = WinRateTracker()
         self.tracker.log_summary()
 
-        # ThreadPool
+        # ThreadPool & Locks
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+        self.entry_lock = asyncio.Lock()
 
     async def start(self):
         """Main Entry Point & Orchestrator"""
@@ -106,6 +110,7 @@ class TrendBot:
         logger.info(f"💰 BALANCE: ${self.start_balance:.2f} | 🎯 DAILY TARGET (3%): ${daily_target:.2f}")
 
         # 2. Launch Background Loops
+        asyncio.create_task(self.ob_streamer.run_stream())
         asyncio.create_task(self.reporting_loop())
         asyncio.create_task(self.safety_loop())
         asyncio.create_task(
@@ -138,6 +143,8 @@ class TrendBot:
                 
                 # --- A. MACRO RE-SCAN (Every 4 Hours OR New Day) ---
                 hours_since_last_scan = (now_utc - last_scan_time).total_seconds() / 3600
+                mins_since_last_scan = (now_utc - last_scan_time).total_seconds() / 60
+                is_completely_idle = len(self.market.positions) == 0
                 
                 if now_date != last_scan_date or hours_since_last_scan >= MACRO_SCAN_INTERVAL_HOURS:
                     if now_date != last_scan_date:
@@ -150,6 +157,12 @@ class TrendBot:
                         
                     await self.run_macro_scan()
                     last_scan_date = now_date
+                    last_scan_time = now_utc
+
+                # --- A.5 IDLE RESCAN (Operational Silence) ---
+                elif is_completely_idle and mins_since_last_scan >= 45.0:
+                    logger.info(f"🦇 SILENCIO OPERACIONAL: Sin operaciones abiertas por {mins_since_last_scan:.1f} min. Forzando Escaneo Táctico...")
+                    await self.run_macro_scan()
                     last_scan_time = now_utc
 
                 # --- B. MICRO SCAN (Intraday) ---
@@ -179,7 +192,11 @@ class TrendBot:
                         return None
 
                     # MICRO CHECK (solo pares ANOMALY)
-                    await self.check_micro_entry(symbol, direction, pick)
+                    async with self.entry_lock:
+                        # Double-check capacity inside lock
+                        if len(self.market.positions) >= MAX_SIGNALS:
+                            return None
+                        await self.check_micro_entry(symbol, direction, pick)
                     
                     # Return pick if entered to remove it from watchlist
                     if symbol in self.market.positions:
@@ -270,6 +287,16 @@ class TrendBot:
 
             # Re-ordenar por score descendente (priorizamos los más fuertes)
             self.daily_watchlist.sort(key=lambda x: x['score'], reverse=True)
+
+            # --- 📡 ORDERBOOK STREAMER: SUSCRIBIR AL TOP WATCHLIST + ACTIVAS ---
+            top_symbols = [p['symbol'] for p in self.daily_watchlist]
+            active_symbols = list(self.market.positions.keys())
+            symbols_to_track = list(set(top_symbols + active_symbols))
+            await self.ob_streamer.update_focus_list(symbols_to_track)
+            
+            # WARM-UP: Dale 3 segundos al OrderBook Streamer para descargar los mapas de liquidez de Binance
+            logger.info("⏳ Warm-up: Dando 3 segundos al OrderBook Streamer para estabilizar websockets...")
+            await asyncio.sleep(3)
 
             logger.info(
                 f"✅ WATCHLIST FINAL: {len(self.daily_watchlist)} pares "
@@ -416,6 +443,17 @@ class TrendBot:
                         logger.warning(f"WHALE ENTRY {sym}: falló el cálculo de ATR")
                         continue
 
+                    # --- FILTRO ORDERBOOK ---
+                    obi = self.ob_streamer.get_orderbook_imbalance(sym)
+                    if (direction == 'LONG' and obi < -0.3) or (direction == 'SHORT' and obi > 0.3):
+                        logger.warning(f"🛡️ WHALE OBI REJECT {sym} ({direction}): {obi:+.2f}")
+                        continue
+                        
+                    wall_p, wall_dist = self.ob_streamer.get_nearest_wall(sym, direction)
+                    if wall_dist is not None and wall_dist < 0.5:
+                        logger.warning(f"🧱 WHALE WALL REJECT {sym} ({direction}): Muro a {wall_dist:.2f}%")
+                        continue
+
                     # Señal directa (sin confirm_entry)
                     signal = {
                         'direction':     direction,
@@ -473,6 +511,17 @@ class TrendBot:
             )
             
             if is_valid:
+                # --- ORDERBOOK OBI & WALL FILTER ---
+                obi = self.ob_streamer.get_orderbook_imbalance(symbol)
+                if (direction == 'LONG' and obi < -0.3) or (direction == 'SHORT' and obi > 0.3):
+                    logger.warning(f"🛡️ MICRO AVOIDANCE {symbol} ({direction}): Rechazo OBI {obi:+.2f}")
+                    return
+                
+                wall_p, wall_dist = self.ob_streamer.get_nearest_wall(symbol, direction)
+                if wall_dist is not None and wall_dist < 0.5:
+                    logger.warning(f"🧱 MICRO AVOIDANCE {symbol} ({direction}): Muro a {wall_dist:.2f}%")
+                    return
+
                 logger.info(f"✨ MICRO TRIGGER: {symbol} ({direction}) Confirmed!")
                 logger.info(f"   📈 Indicators: RSI={rsi_val:.1f} | Entropy={entropy_val:.3f} | KF_slope={kf_slope:.6f} | ATR={atr_val:.4f}")
                 
@@ -582,10 +631,32 @@ class TrendBot:
 
     async def manage_positions(self):
         """
-        Manages active positions using PID Controller Logic.
-        Faithfully matches Backtest PositionManager.update_positions() behavior.
+        Manages active positions CONCURRENTLY using PID Controller Logic.
         """
-        for symbol, pos in list(self.market.positions.items()):
+        current_tracked = self.ob_streamer.active_symbols
+        active_positions = set(self.market.positions.keys())
+        if not active_positions.issubset(current_tracked):
+            await self.ob_streamer.update_focus_list(list(current_tracked | active_positions))
+
+        tasks = [self._process_single_position(s, p) for s, p in list(self.market.positions.items())]
+        if tasks:
+            await asyncio.gather(*tasks)
+            
+        closed_symbols = [s for s in self.pos_state if s not in self.market.positions]
+        for s in closed_symbols:
+            self.pos_state.pop(s, None)
+
+    async def _process_single_position(self, symbol, pos):
+        # Using if True to maintain the original 12-space indentation of the loop body
+        if True:
+            # --- 0. ORDER BOOK RADAR (ANTI-CRASH) ---
+            wall_p, wall_dist = self.ob_streamer.get_nearest_wall(symbol, pos['side'])
+            if wall_dist is not None and wall_dist < 0.75:
+                logger.warning(f"🚨 ANTI-CRASH RADAR {symbol} {pos['side']}: Muro a {wall_dist:.2f}%. Huyendo!")
+                await self.market.close_position(symbol, "ORDERBOOK_WALL_DETECTED")
+                self.pos_state.pop(symbol, None)
+                return
+
             # Initialize state for orphaned positions (e.g., after bot restart)
             if symbol not in self.pos_state:
                 logger.info(f"⚠️ Initializing state for orphaned position: {symbol}")
@@ -744,11 +815,6 @@ class TrendBot:
                     logger.warning(f"⏰ MAX_HOLD_TIME: {symbol} ({candles_elapsed} candles)")
                     await self.market.close_position(symbol, "MAX_HOLD_TIME")
                     self.pos_state.pop(symbol, None)
-        
-        # Clean up pos_state for externally closed positions
-        closed_symbols = [s for s in self.pos_state if s not in self.market.positions]
-        for s in closed_symbols:
-            self.pos_state.pop(s, None)
 
     async def reporting_loop(self):
         """Periodically reports comprehensive status."""
