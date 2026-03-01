@@ -447,6 +447,73 @@ class MarketData:
         data = await asyncio.to_thread(_fetch)
         return data
     
+    async def get_funding_rate(self, symbol, limit=5):
+        """
+        Obtiene el historial de funding rate para un símbolo.
+        Returns: lista de dicts con 'fundingRate' (float) y 'fundingTime' (ms).
+        Un funding extremo (>0.08% ó <-0.05%) indica posicionamiento masivo.
+        """
+        url = f"{self.base_url}/fapi/v1/fundingRate"
+        params = {'symbol': symbol, 'limit': limit}
+
+        def _fetch():
+            try:
+                r = self.session.get(url, params=params, timeout=5)
+                if r.status_code == 200:
+                    return [{'fundingRate': float(x['fundingRate']),
+                             'fundingTime': int(x['fundingTime'])}
+                            for x in r.json()]
+            except Exception:
+                pass
+            return []
+
+        return await asyncio.to_thread(_fetch)
+
+    async def get_long_short_ratio(self, symbol, period='1h', limit=4):
+        """
+        Obtiene el ratio de cuentas long vs short (retail sentiment).
+        Returns: lista de dicts con 'longShortRatio' y 'longAccount' y 'shortAccount'.
+        Un ratio >0.6 long = retail muy alcista → señal contraria (ballenas pueden shortar).
+        """
+        url = f"{self.base_url}/futures/data/globalLongShortAccountRatio"
+        params = {'symbol': symbol, 'period': period, 'limit': limit}
+
+        def _fetch():
+            try:
+                r = self.session.get(url, params=params, timeout=5)
+                if r.status_code == 200:
+                    return [{'longShortRatio': float(x['longShortRatio']),
+                             'longAccount':    float(x['longAccount']),
+                             'shortAccount':   float(x['shortAccount'])}
+                            for x in r.json()]
+            except Exception:
+                pass
+            return []
+
+        return await asyncio.to_thread(_fetch)
+
+    async def get_agg_trades(self, symbol, limit=500):
+        """
+        Obtiene los últimos trades agregados del par (Fase 4 — Mega-trades).
+        Returns: lista de dicts con 'p' (price), 'q' (qty), 'm' (is_buyer_maker).
+        Un trade individual con q*p > 250k USDT es firma de ballena institucional.
+        """
+        url = f"{self.base_url}/fapi/v1/aggTrades"
+        params = {'symbol': symbol, 'limit': limit}
+
+        def _fetch():
+            try:
+                r = self.session.get(url, params=params, timeout=5)
+                if r.status_code == 200:
+                    return [{'p': float(x['p']), 'q': float(x['q']),
+                             'm': bool(x['m']), 't': int(x['T'])}
+                            for x in r.json()]
+            except Exception:
+                pass
+            return []
+
+        return await asyncio.to_thread(_fetch)
+
     # --- CRASH DETECTION LOGIC MOVED TO SENTIMENT ANALYZER (Removed legacy functions here) ---
 
 

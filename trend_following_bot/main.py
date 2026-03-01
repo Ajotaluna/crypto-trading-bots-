@@ -226,7 +226,9 @@ class TrendBot:
             # ─── WHALE SCAN: top-15 adicionales ──────────────────────
             logger.info("🐋 WHALE SCAN: escaneando todo el mercado en batches de 50...")
             try:
-                whale_picks = await scan_whale_universe(self.market, top_n=15)
+                whale_picks = await scan_whale_universe(
+                    self.market, top_n=15, ob_streamer=self.ob_streamer
+                )
             except Exception as we:
                 logger.error(f"Whale Scan Error: {we}")
                 whale_picks = []

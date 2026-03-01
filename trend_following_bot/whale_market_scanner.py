@@ -4,16 +4,17 @@ whale_market_scanner.py — Scanner de ballenas sobre todo el mercado de futuros
 Itera TODOS los pares USDT en batches de 50, descarga 200 velas 15m por par,
 calcula el whale_score y retorna los top-N con las señales más fuertes.
 
-Este módulo es completamente autónomo (sin nascent_scanner).
+Ahora incluye contexto on-chain (OI, funding, long/short ratio, agg_trades)
+y datos del libro de órdenes en tiempo real (ob_streamer) como señales extra.
 
 Uso desde main.py:
     from whale_market_scanner import scan_whale_universe
-    whale_picks = await scan_whale_universe(market, top_n=15)
+    whale_picks = await scan_whale_universe(market, top_n=15, ob_streamer=self.ob_streamer)
 """
 import asyncio
 import logging
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 import pandas as pd
 
@@ -25,13 +26,16 @@ logger = logging.getLogger("WhaleMarketScanner")
 # CONFIGURACIÓN
 # ===================================================================
 
-BATCH_SIZE       = 50     # Pares por iteración (límite de streams Binance)
-MIN_VOL_USDT_M   = 25.0   # Volumen mínimo 24h en millones USDT (estricto: solo pares líquidos)
-MIN_SCORE        = 90     # Score mínimo: MEDIUM+ (era 40=LOW)
+BATCH_SIZE       = 50     # Pares por iteración
+MIN_VOL_USDT_M   = 25.0   # Volumen mínimo 24h en millones USDT
+MIN_SCORE        = 90     # Score mínimo: MEDIUM+ (umbral ajustado al nuevo rango)
 KLINES_LIMIT     = 200    # Velas a descargar por par
 KLINES_INTERVAL  = '15m'  # Intervalo de las velas
 CONCURRENCY      = 8      # Descargas paralelas dentro de cada batch
 INTER_BATCH_WAIT = 0.3    # Segundos de pausa entre batches (evitar rate limit)
+
+# Context fetch timeout (evitar que un endpoint lento bloquee el scan)
+CONTEXT_TIMEOUT  = 4.0    # segundos
 
 # Blacklist de pares con comportamiento errático / baja calidad
 BLACKLIST = {
@@ -49,7 +53,6 @@ def _normalize_df(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = [c.lower() for c in df.columns]
 
-    # Renombrar taker buy si viene con nombre largo
     rename_map = {
         'taker_buy_base_asset_volume': 'taker_buy_vol',
         'taker_buy_quote_asset_volume': 'taker_buy_quote_vol',
@@ -81,6 +84,14 @@ def _make_pick(symbol: str, result: dict, quote_vol_m: float) -> Dict[str, Any]:
     }
 
 
+async def _safe(coro, default):
+    """Ejecuta una coroutine con timeout, retornando default en caso de fallo."""
+    try:
+        return await asyncio.wait_for(coro, timeout=CONTEXT_TIMEOUT)
+    except Exception:
+        return default
+
+
 # ===================================================================
 # FILTRO DEL UNIVERSO
 # ===================================================================
@@ -88,11 +99,8 @@ def _make_pick(symbol: str, result: dict, quote_vol_m: float) -> Dict[str, Any]:
 async def _get_universe(market) -> List[str]:
     """
     Obtiene todos los pares USDT activos con vol > MIN_VOL_USDT_M.
-    Usa get_trading_universe() de MarketData si está disponible,
-    cae en REST directo como fallback.
     """
     try:
-        # Primero intentamos con el método del bot
         symbols = await market.get_trading_universe()
         if symbols:
             logger.info(f"🌍 Universo via MarketData: {len(symbols)} pares")
@@ -137,9 +145,10 @@ async def _analyze_batch(
     symbols: List[str],
     market,
     min_score: int,
+    ob_streamer=None,
 ) -> List[Dict[str, Any]]:
     """
-    Descarga klines y calcula whale_score para un batch de símbolos.
+    Descarga klines, contexto on-chain y datos de OB, calcula whale_score.
     Retorna lista de picks con score >= min_score.
     """
     sem = asyncio.Semaphore(CONCURRENCY)
@@ -148,6 +157,7 @@ async def _analyze_batch(
     async def _analyze_one(sym: str):
         async with sem:
             try:
+                # ── 1. Klines (obligatorio) ──────────────────────────
                 df = await market.get_klines(
                     sym, interval=KLINES_INTERVAL, limit=KLINES_LIMIT
                 )
@@ -156,19 +166,47 @@ async def _analyze_batch(
 
                 df = _normalize_df(df)
 
-                # Calcular volumen 24h en millones USDT
+                # Filtro de liquidez
                 last_close = float(df['close'].iloc[-1]) if len(df) > 0 else 0
                 vol_24h_candles = min(96, len(df))
                 vol_24h_m = (
                     float(df['volume'].iloc[-vol_24h_candles:].sum()) * last_close / 1_000_000
                 )
-
-                # Aplicar filtro de liquidez mínima
                 if vol_24h_m < MIN_VOL_USDT_M:
                     return
 
-                # Calcular whale score
-                ws = whale_score(df)
+                # ── 2. Contexto on-chain (Fases 1 y 4 — en paralelo) ─
+                oi_coro      = market.get_open_interest(sym, period='1h')
+                funding_coro = market.get_funding_rate(sym, limit=3)
+                ls_coro      = market.get_long_short_ratio(sym, period='1h', limit=3)
+                trades_coro  = market.get_agg_trades(sym, limit=300)
+
+                oi_hist, funding, ls_data, agg_trades = await asyncio.gather(
+                    _safe(oi_coro,      []),
+                    _safe(funding_coro, []),
+                    _safe(ls_coro,      []),
+                    _safe(trades_coro,  []),
+                )
+
+                # ── 3. Order Book desde streamer (Fase 2) ────────────
+                ob_bids, ob_asks = [], []
+                if ob_streamer is not None:
+                    book = ob_streamer.books.get(sym, {})
+                    ob_bids = book.get('bids', [])
+                    ob_asks = book.get('asks', [])
+
+                # ── 4. Construir contexto ────────────────────────────
+                context = {
+                    'oi_history':   oi_hist,
+                    'funding_list': funding,
+                    'ls_data':      ls_data,
+                    'ob_bids':      ob_bids,
+                    'ob_asks':      ob_asks,
+                    'agg_trades':   agg_trades,
+                }
+
+                # ── 5. Calcular whale score ───────────────────────────
+                ws = whale_score(df, context=context)
                 if ws['score'] < min_score:
                     return
 
@@ -192,37 +230,28 @@ async def scan_whale_universe(
     top_n: int = 15,
     min_score: int = MIN_SCORE,
     verbose: bool = False,
+    ob_streamer=None,
 ) -> List[Dict[str, Any]]:
     """
     Escanea TODO el mercado de futuros Binance en busca de ballenas.
 
-    Itera en batches de BATCH_SIZE (50), descarga 200 velas 15m por par,
-    calcula whale_score y retorna los top_n con las señales más fuertes.
-
     Args:
-        market:    instancia de MarketData (del bot)
-        top_n:     número de picks a retornar (default 15)
-        min_score: score mínimo para incluir un par (default 40)
-        verbose:   si True, loggea cada par analizado
+        market:     instancia de MarketData (del bot)
+        top_n:      número de picks a retornar (default 15)
+        min_score:  score mínimo para incluir un par
+        verbose:    si True, loggea cada par analizado
+        ob_streamer: instancia de OrderbookStreamer (opcional, activa Fase 2)
 
     Returns:
-        list de dicts con keys: symbol, score, direction, reasons, confidence,
-        cvd_slope, absorption, vol_24h_m, whale_reasons
-        → último de mayor a menor score
-
-    Ejemplo de pick retornado:
-        {
-          'symbol': 'SOLUSDT',
-          'score': 160,
-          'direction': 'LONG',
-          'reasons': 'WHALE:HIGH | W_CVD_ACCUM, W_ABSORPTION(3v)',
-          'layer': 'WHALE',
-          'confidence': 'HIGH',
-          ...
-        }
+        lista de dicts con keys: symbol, score, direction, reasons, confidence,
+        cvd_slope, absorption, vol_24h_m, whale_reasons → ordenada de mayor a menor score
     """
     t_start = time.time()
-    logger.info(f"🐋 WHALE MARKET SCAN iniciando (top={top_n}, min_score={min_score})...")
+    ob_active = ob_streamer is not None
+    logger.info(
+        f"🐋 WHALE MARKET SCAN iniciando "
+        f"(top={top_n}, min_score={min_score}, ob_streamer={'ON' if ob_active else 'OFF'})..."
+    )
 
     # 1. Obtener universo
     universe = await _get_universe(market)
@@ -233,21 +262,17 @@ async def scan_whale_universe(
     total = len(universe)
     logger.info(f"   Universo: {total} pares → {(total + BATCH_SIZE - 1) // BATCH_SIZE} batches de {BATCH_SIZE}")
 
-    # 2. Dividir en batches
-    batches = [
-        universe[i:i + BATCH_SIZE]
-        for i in range(0, total, BATCH_SIZE)
-    ]
-
-    # 3. Procesar batch por batch
+    # 2. Dividir en batches y procesar
+    batches = [universe[i:i + BATCH_SIZE] for i in range(0, total, BATCH_SIZE)]
     all_picks = []
+
     for idx, batch in enumerate(batches, 1):
         if verbose:
             logger.info(f"   Batch {idx}/{len(batches)}: analizando {len(batch)} pares...")
         else:
             logger.debug(f"   Batch {idx}/{len(batches)}: {len(batch)} pares")
 
-        batch_picks = await _analyze_batch(batch, market, min_score)
+        batch_picks = await _analyze_batch(batch, market, min_score, ob_streamer=ob_streamer)
         all_picks.extend(batch_picks)
 
         if verbose and batch_picks:
@@ -257,11 +282,10 @@ async def scan_whale_universe(
                     f"({p['confidence']}) dir={p['direction']}"
                 )
 
-        # Pausa breve entre batches para no saturar la API
         if idx < len(batches):
             await asyncio.sleep(INTER_BATCH_WAIT)
 
-    # 4. Ordenar y seleccionar top-N
+    # 3. Ordenar y seleccionar top-N
     all_picks.sort(key=lambda x: x['score'], reverse=True)
     top_picks = all_picks[:top_n]
 

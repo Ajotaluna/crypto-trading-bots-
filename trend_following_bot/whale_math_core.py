@@ -11,10 +11,20 @@ Uso:
     from whale_math_core import whale_score
     result = whale_score(df)
     # result = {'score': 140, 'direction': 'LONG', 'reasons': [...], 'confidence': 'HIGH'}
+
+    # Con contexto on-chain (opcional — activa señales extra):
+    result = whale_score(df, context={
+        'oi_history':   [...],   # output de market_data.get_open_interest()
+        'funding_list': [...],   # output de market_data.get_funding_rate()
+        'ls_data':      [...],   # output de market_data.get_long_short_ratio()
+        'ob_bids':      [...],   # ob_streamer.books[sym]['bids']
+        'ob_asks':      [...],   # ob_streamer.books[sym]['asks']
+        'agg_trades':   [...],   # output de market_data.get_agg_trades()
+    })
 """
 import numpy as np
 import pandas as pd
-from typing import Tuple, List, Dict, Any
+from typing import Tuple, List, Dict, Any, Optional
 
 # ===================================================================
 # CONSTANTES
@@ -26,6 +36,13 @@ ABSORB_WINDOW    = 48   # Ventana para absorción
 SWEEP_WINDOW     = 48   # Ventana para liquidity sweeps
 VOL_ZSCORE_WIN   = 96   # Ventana para z-score de volumen
 VOLUME_CLOCK_WIN = 32   # Ventana para análisis de volume clock
+
+# Umbrales ajustados para el nuevo score máximo (~590 pts)
+# SCORE >= 420 → ULTRA  |  >= 280 → HIGH  |  >= 150 → MEDIUM  |  >= 60 → LOW
+CONFIDENCE_ULTRA   = 420
+CONFIDENCE_HIGH    = 280
+CONFIDENCE_MEDIUM  = 150
+CONFIDENCE_LOW     =  60
 
 
 # ===================================================================
@@ -75,7 +92,49 @@ def cvd_slope(df: pd.DataFrame,
 
 
 # ===================================================================
-# 2. ABSORCIÓN (alto volumen + rango pequeño)
+# 2. CVD DIVERGENCE (Fase 3 — portada desde nascent_scanner/whale_math.py)
+# ===================================================================
+
+def cvd_divergence(df: pd.DataFrame, window: int = 96) -> Tuple[Optional[str], float]:
+    """
+    Detecta divergencia entre CVD y precio.
+
+    Divergencia alcista: precio baja pero CVD sube → acumulación oculta.
+    Divergencia bajista: precio sube pero CVD baja → distribución oculta.
+
+    Returns: (divergence_type, strength)
+    - divergence_type: 'BULLISH', 'BEARISH', or None
+    - strength: magnitud (0.0 a 1.0+)
+    """
+    try:
+        data = df.iloc[-window:].copy()
+        cvd_series = _cvd(df, window)
+
+        mid = window // 2
+        price_change = (
+            (data['close'].iloc[-1] - data['close'].iloc[mid]) /
+            (data['close'].iloc[mid] + 1e-10)
+        )
+        cvd_change = (
+            (cvd_series.iloc[-1] - cvd_series.iloc[mid]) /
+            (abs(cvd_series.iloc[mid]) + 1e-10)
+        )
+
+        if price_change < -0.005 and cvd_change > 0.1:
+            strength = abs(cvd_change) + abs(price_change)
+            return 'BULLISH', strength
+
+        if price_change > 0.005 and cvd_change < -0.1:
+            strength = abs(cvd_change) + abs(price_change)
+            return 'BEARISH', strength
+
+        return None, 0.0
+    except Exception:
+        return None, 0.0
+
+
+# ===================================================================
+# 3. ABSORCIÓN (alto volumen + rango pequeño)
 # ===================================================================
 
 def absorption_score(df: pd.DataFrame,
@@ -109,7 +168,7 @@ def absorption_score(df: pd.DataFrame,
 
 
 # ===================================================================
-# 3. LIQUIDITY SWEEPS (stop hunts)
+# 4. LIQUIDITY SWEEPS (stop hunts)
 # ===================================================================
 
 def liquidity_sweep(df: pd.DataFrame,
@@ -117,7 +176,6 @@ def liquidity_sweep(df: pd.DataFrame,
                     wick_body_ratio: float = 2.5) -> List[Dict]:
     """
     Detecta wick extremos que indican barridos de liquidez (stop hunts).
-    Retorna lista de eventos {'type': 'BULLISH'|'BEARISH', 'idx', 'wick_ratio'}.
     """
     events = []
     try:
@@ -136,10 +194,8 @@ def liquidity_sweep(df: pd.DataFrame,
             if body < 1e-10:
                 continue
 
-            # Bullish sweep: wick inferior largo + cierre alcista
             if lower_wick > body * wick_body_ratio and cl > o:
                 events.append({'type': 'BULLISH', 'idx': i, 'wick_ratio': lower_wick / body})
-            # Bearish sweep: wick superior largo + cierre bajista
             if upper_wick > body * wick_body_ratio and cl < o:
                 events.append({'type': 'BEARISH', 'idx': i, 'wick_ratio': upper_wick / body})
     except Exception:
@@ -148,21 +204,17 @@ def liquidity_sweep(df: pd.DataFrame,
 
 
 # ===================================================================
-# 4. VOLUMEN Z-SCORE (spike detector)
+# 5. VOLUMEN Z-SCORE (spike detector)
 # ===================================================================
 
 def volume_zscore(df: pd.DataFrame, window: int = VOL_ZSCORE_WIN) -> float:
-    """
-    Z-score del volumen de las últimas 24 velas vs el historial.
-    > 2.0 = spike significativo.
-    """
+    """Z-score del volumen de las últimas 24 velas vs el historial. > 2.0 = spike significativo."""
     try:
         vol = pd.to_numeric(df['volume'], errors='coerce').fillna(0)
         if len(vol) < window + 24:
             return 0.0
         hist    = vol.iloc[-(window + 24):-24]
         current = vol.iloc[-24:].sum()
-        # Agrupamos en bloques de 24 para comparar
         blocks  = [hist.iloc[i:i+24].sum() for i in range(0, len(hist)-24, 24)]
         if not blocks:
             return 0.0
@@ -174,14 +226,11 @@ def volume_zscore(df: pd.DataFrame, window: int = VOL_ZSCORE_WIN) -> float:
 
 
 # ===================================================================
-# 5. VOLUME CLOCK (acumulación en horario de ballena)
+# 6. VOLUME CLOCK BIAS
 # ===================================================================
 
 def volume_clock_bias(df: pd.DataFrame, window: int = VOLUME_CLOCK_WIN) -> float:
-    """
-    Compara volumen en las últimas 8 velas vs las 8 anteriores.
-    >0 = aceleración reciente, <0 = desaceleración.
-    """
+    """Compara volumen en las últimas 8 velas vs las 8 anteriores. >0 = aceleración reciente."""
     try:
         vol = pd.to_numeric(df['volume'], errors='coerce').fillna(0)
         if len(vol) < 16:
@@ -194,31 +243,301 @@ def volume_clock_bias(df: pd.DataFrame, window: int = VOLUME_CLOCK_WIN) -> float
 
 
 # ===================================================================
-# 6. WHALE SCORE — Función principal de entrada
+# 7. TAKER BUY WHALE (Fase 3)
 # ===================================================================
 
-def whale_score(df: pd.DataFrame) -> Dict[str, Any]:
+def taker_buy_whale_score(df: pd.DataFrame) -> Tuple[int, Optional[str]]:
     """
-    Calcula el score de actividad de ballena sobre un DataFrame de klines.
+    Detecta acumulación agresiva cuando el volumen comprador domina
+    AND el volumen total está en spike z-score > 1.5.
 
-    Args:
-        df: DataFrame con columnas open, high, low, close, volume
-            (y opcionalmente taker_buy_vol)
+    Returns: (score: int, reason: str | None)
+    """
+    try:
+        if 'taker_buy_vol' not in df.columns:
+            return 0, None
+        recent_buy = df['taker_buy_vol'].iloc[-48:].sum()
+        recent_vol = df['volume'].iloc[-48:].sum()
+        if recent_vol <= 0:
+            return 0, None
+        buy_ratio = recent_buy / recent_vol
+        vol_z     = volume_zscore(df, window=VOL_ZSCORE_WIN)
 
-    Returns:
-        {
-          'score':      int,         # score total (0-300+)
-          'direction':  str,         # 'LONG' | 'SHORT' | 'NEUTRAL'
-          'reasons':    list[str],   # señales activas
-          'confidence': str,         # 'ULTRA'|'HIGH'|'MEDIUM'|'LOW'|'NONE'
-          'cvd_slope':  float,
-          'absorption': int,         # número de velas de absorción
+        if buy_ratio > 0.68 and vol_z > 1.5:
+            return 40, f"W_TAKER_WHALE_BUY({buy_ratio:.0%},z={vol_z:.1f})"
+        elif buy_ratio > 0.62 and vol_z > 1.0:
+            return 20, f"W_TAKER_BIAS({buy_ratio:.0%})"
+        elif buy_ratio < 0.38 and vol_z > 1.5:
+            return 40, f"W_TAKER_WHALE_SELL({1-buy_ratio:.0%},z={vol_z:.1f})"
+        elif buy_ratio < 0.42 and vol_z > 1.0:
+            return 20, f"W_SELLER_BIAS({1-buy_ratio:.0%})"
+    except Exception:
+        pass
+    return 0, None
+
+
+# ===================================================================
+# 8. ORDER BOOK SCORE (Fase 2 — portada desde whale_math_ob.py)
+# ===================================================================
+
+def _orderbook_imbalance(bids: list, asks: list, levels: int = 10) -> float:
+    """OBI en [-1, +1]. Positivo = bids dominan."""
+    try:
+        bids_vol = sum(float(q) for _, q in bids[:levels])
+        asks_vol = sum(float(q) for _, q in asks[:levels])
+        total = bids_vol + asks_vol
+        if total == 0:
+            return 0.0
+        return (bids_vol - asks_vol) / total
+    except Exception:
+        return 0.0
+
+
+def _detect_large_walls(bids: list, asks: list,
+                        levels: int = 20,
+                        multiplier: float = 5.0) -> Dict:
+    """Detecta paredes de órdenes institucionales (órdenes >= multiplier × promedio)."""
+    try:
+        def find_walls(side, n):
+            qtys = [float(q) for _, q in side[:n]]
+            if not qtys:
+                return []
+            avg = np.mean(qtys)
+            if avg == 0:
+                return []
+            return [
+                {'price': float(p), 'qty': float(q), 'multiple': round(float(q) / avg, 1)}
+                for p, q in side[:n]
+                if float(q) / avg >= multiplier
+            ]
+
+        bid_walls = find_walls(bids, levels)
+        ask_walls = find_walls(asks, levels)
+        return {
+            'bid_walls': bid_walls,
+            'ask_walls': ask_walls,
+            'has_bid_wall': len(bid_walls) > 0,
+            'has_ask_wall': len(ask_walls) > 0,
         }
+    except Exception:
+        return {'bid_walls': [], 'ask_walls': [], 'has_bid_wall': False, 'has_ask_wall': False}
+
+
+def orderbook_score(bids: list, asks: list) -> Tuple[int, List[str]]:
+    """
+    Puntúa el estado del libro de órdenes como señal de actividad whale.
+
+    Returns: (score: int, reasons: list[str])
     """
     score   = 0
     reasons = []
 
-    # ─── Validación básica ───────────────────────────────────────
+    if not bids or not asks:
+        return 0, []
+
+    # OBI
+    obi = _orderbook_imbalance(bids, asks, levels=10)
+    if obi > 0.40:
+        score += 25
+        reasons.append(f"OB_BID_PRESSURE({obi:+.2f})")
+    elif obi > 0.25:
+        score += 12
+        reasons.append(f"OB_BID_MILD({obi:+.2f})")
+    elif obi < -0.40:
+        score += 25
+        reasons.append(f"OB_ASK_PRESSURE({obi:+.2f})")
+    elif obi < -0.25:
+        score += 12
+        reasons.append(f"OB_ASK_MILD({obi:+.2f})")
+
+    # Walls
+    walls = _detect_large_walls(bids, asks, levels=20, multiplier=5.0)
+    if walls['has_bid_wall']:
+        top = max(walls['bid_walls'], key=lambda w: w['multiple'])
+        score += 20
+        reasons.append(f"OB_BID_WALL({top['multiple']:.1f}x@{top['price']:.4f})")
+    if walls['has_ask_wall']:
+        top = max(walls['ask_walls'], key=lambda w: w['multiple'])
+        score += 20
+        reasons.append(f"OB_ASK_WALL({top['multiple']:.1f}x@{top['price']:.4f})")
+
+    return score, reasons
+
+
+# ===================================================================
+# 9. ON-CHAIN CONTEXT SCORES (Fase 1)
+# ===================================================================
+
+def oi_delta_score(oi_history: list) -> Tuple[int, Optional[str], Optional[str]]:
+    """
+    Calcula el delta de Open Interest para detectar dinero nuevo entrando/saliendo.
+
+    Args:
+        oi_history: lista de dicts con 'sumOpenInterest' (output de get_open_interest())
+
+    Returns: (score, reason, direction_hint)
+    - direction_hint: 'LONG'|'SHORT'|None (solo es una pista, no define el score)
+    """
+    try:
+        if not oi_history or len(oi_history) < 2:
+            return 0, None, None
+
+        vals = [float(x['sumOpenInterest']) for x in oi_history if 'sumOpenInterest' in x]
+        if len(vals) < 2:
+            return 0, None, None
+
+        oldest = vals[0]
+        newest = vals[-1]
+        if oldest <= 0:
+            return 0, None, None
+
+        delta_pct = (newest - oldest) / oldest * 100
+
+        if delta_pct >= 10.0:
+            return 30, f"OI_SURGE(+{delta_pct:.1f}%)", 'LONG'
+        elif delta_pct >= 5.0:
+            return 18, f"OI_GROWING(+{delta_pct:.1f}%)", 'LONG'
+        elif delta_pct <= -10.0:
+            return 30, f"OI_COLLAPSE({delta_pct:.1f}%)", 'SHORT'
+        elif delta_pct <= -5.0:
+            return 18, f"OI_FALLING({delta_pct:.1f}%)", 'SHORT'
+    except Exception:
+        pass
+    return 0, None, None
+
+
+def funding_rate_score(funding_list: list) -> Tuple[int, Optional[str]]:
+    """
+    Detecta funding rates extremos que indican posicionamiento institucional.
+    Funding extremo positivo → todos long → ballenas pueden estar acumulando SHORT.
+    Funding extremo negativo → todos short → ballenas pueden estar acumulando LONG.
+
+    Returns: (score, reason)
+    """
+    try:
+        if not funding_list:
+            return 0, None
+        latest = funding_list[-1].get('fundingRate', 0.0)
+
+        if latest > 0.0008:    # > 0.08% — pagos masivos de longs
+            return 20, f"FUNDING_EXTREME_BULL({latest*100:.3f}%)"
+        elif latest > 0.0005:  # > 0.05%
+            return 10, f"FUNDING_HIGH({latest*100:.3f}%)"
+        elif latest < -0.0005: # < -0.05% — retail muy short
+            return 20, f"FUNDING_EXTREME_BEAR({latest*100:.3f}%)"
+        elif latest < -0.0003:
+            return 10, f"FUNDING_LOW({latest*100:.3f}%)"
+    except Exception:
+        pass
+    return 0, None
+
+
+def long_short_ratio_score(ls_data: list) -> Tuple[int, Optional[str]]:
+    """
+    Detecta extremos en el ratio de cuentas long/short (retail sentiment).
+    Ratio extremo = crowd está de un lado = ballenas posiblemente en el otro.
+
+    Returns: (score, reason)
+    """
+    try:
+        if not ls_data:
+            return 0, None
+        latest = ls_data[-1]
+        long_acc  = float(latest.get('longAccount',  0.5))
+        short_acc = float(latest.get('shortAccount', 0.5))
+
+        if long_acc > 0.65:   # 65%+ retail long → crowd extremo
+            return 15, f"LS_CROWD_LONG({long_acc:.0%})"
+        elif long_acc > 0.60:
+            return 8, f"LS_LONG_BIAS({long_acc:.0%})"
+        elif short_acc > 0.65:
+            return 15, f"LS_CROWD_SHORT({short_acc:.0%})"
+        elif short_acc > 0.60:
+            return 8, f"LS_SHORT_BIAS({short_acc:.0%})"
+    except Exception:
+        pass
+    return 0, None
+
+
+# ===================================================================
+# 10. MEGA-TRADES (Fase 4)
+# ===================================================================
+
+def mega_trade_score(trades: list, min_usd: float = 250_000) -> Tuple[int, Optional[str]]:
+    """
+    Detecta trades individuales de tamaño institucional (>min_usd USDT).
+    Un cluster de 3+ mega-trades = ballena en movimiento activo.
+
+    Args:
+        trades:  lista de dicts {'p': price, 'q': qty, 'm': is_buyer_maker, 't': time_ms}
+        min_usd: umbral mínimo en USDT para considerar un trade "mega"
+
+    Returns: (score, reason)
+    """
+    try:
+        if not trades:
+            return 0, None
+
+        mega = [t for t in trades if float(t.get('p', 0)) * float(t.get('q', 0)) >= min_usd]
+        total = len(mega)
+
+        if total == 0:
+            return 0, None
+
+        # Dirección dominante de los mega-trades
+        buy_mega  = sum(1 for t in mega if not t.get('m', True))  # m=False → buyer taker
+        sell_mega = total - buy_mega
+
+        dir_str   = f"buy={buy_mega}/sell={sell_mega}"
+
+        if total >= 5:
+            return 50, f"MEGA_CLUSTER(n={total},{dir_str})"
+        elif total >= 3:
+            return 35, f"MEGA_GROUP(n={total},{dir_str})"
+        elif total >= 1:
+            biggest = max(float(t['p']) * float(t['q']) for t in mega)
+            return 18, f"MEGA_TRADE(n={total},max=${biggest/1e6:.2f}M)"
+    except Exception:
+        pass
+    return 0, None
+
+
+# ===================================================================
+# 11. WHALE SCORE — Función principal de entrada
+# ===================================================================
+
+def whale_score(df: pd.DataFrame, context: Optional[Dict] = None) -> Dict[str, Any]:
+    """
+    Calcula el score de actividad de ballena sobre un DataFrame de klines.
+
+    Args:
+        df:      DataFrame con columnas open, high, low, close, volume
+                 (y opcionalmente taker_buy_vol)
+        context: dict opcional con datos on-chain y de orden book:
+                 {
+                   'oi_history':   list,  # get_open_interest()
+                   'funding_list': list,  # get_funding_rate()
+                   'ls_data':      list,  # get_long_short_ratio()
+                   'ob_bids':      list,  # ob_streamer bids [(price, qty), ...]
+                   'ob_asks':      list,  # ob_streamer asks [(price, qty), ...]
+                   'agg_trades':   list,  # get_agg_trades()
+                 }
+
+    Returns:
+        {
+          'score':      int,
+          'direction':  'LONG' | 'SHORT' | 'NEUTRAL',
+          'reasons':    list[str],
+          'confidence': 'ULTRA'|'HIGH'|'MEDIUM'|'LOW'|'NONE',
+          'cvd_slope':  float,
+          'absorption': int,
+        }
+    """
+    score   = 0
+    reasons = []
+    ctx     = context or {}
+
+    # ─── Validación básica ──────────────────────────────────────
     df = df.copy()
     df.columns = [c.lower() for c in df.columns]
     required = ['open', 'high', 'low', 'close', 'volume']
@@ -226,7 +545,7 @@ def whale_score(df: pd.DataFrame) -> Dict[str, Any]:
         return {'score': 0, 'direction': 'NEUTRAL', 'reasons': [],
                 'confidence': 'NONE', 'cvd_slope': 0.0, 'absorption': 0}
 
-    # ─── Señal 1: CVD slope ──────────────────────────────────────
+    # ─── Señal 1: CVD slope ────────────────────────────────────
     cv_slope = cvd_slope(df)
     if cv_slope > 0.05:
         score += 50
@@ -241,7 +560,7 @@ def whale_score(df: pd.DataFrame) -> Dict[str, Any]:
         score += 30
         reasons.append(f"W_CVD_FALLING({cv_slope:.3f})")
 
-    # ─── Señal 2: Absorción ──────────────────────────────────────
+    # ─── Señal 2: Absorción ────────────────────────────────────
     _, abs_count = absorption_score(df)
     if abs_count >= 5:
         score += 60
@@ -253,8 +572,8 @@ def whale_score(df: pd.DataFrame) -> Dict[str, Any]:
         score += 20
         reasons.append(f"W_ABSORPTION_WEAK({abs_count}v)")
 
-    # ─── Señal 3: Liquidity sweeps ───────────────────────────────
-    sweeps = liquidity_sweep(df)
+    # ─── Señal 3: Liquidity sweeps ──────────────────────────────
+    sweeps      = liquidity_sweep(df)
     bull_sweeps = [e for e in sweeps if e['type'] == 'BULLISH']
     bear_sweeps = [e for e in sweeps if e['type'] == 'BEARISH']
 
@@ -274,7 +593,7 @@ def whale_score(df: pd.DataFrame) -> Dict[str, Any]:
         score += 25
         reasons.append(f"W_BEAR_SWEEP_X{len(bear_sweeps)}")
 
-    # ─── Señal 4: Volume z-score ─────────────────────────────────
+    # ─── Señal 4: Volume z-score ────────────────────────────────
     vol_z = volume_zscore(df)
     if vol_z >= 3.0:
         score += 40
@@ -286,7 +605,7 @@ def whale_score(df: pd.DataFrame) -> Dict[str, Any]:
         score += 10
         reasons.append(f"W_VOL_ELEVATED(z={vol_z:.1f})")
 
-    # ─── Señal 5: Volume clock bias ──────────────────────────────
+    # ─── Señal 5: Volume clock bias ─────────────────────────────
     vc_bias = volume_clock_bias(df)
     if vc_bias > 0.50:
         score += 20
@@ -295,8 +614,7 @@ def whale_score(df: pd.DataFrame) -> Dict[str, Any]:
         score += 10
         reasons.append(f"W_VOL_CLOCK_DECAY({vc_bias:+.0%})")
 
-    # ─── Bonus de convergencia ───────────────────────────────────
-    # Absorción + CVD acumulador + sweep alcista = acumulación clásica
+    # ─── Bonus de convergencia original ─────────────────────────
     if abs_count >= 2 and cv_slope > 0.02 and len(bull_sweeps) >= 1:
         score += 40
         reasons.append("W_CONVERGENCE_BULL")
@@ -304,15 +622,87 @@ def whale_score(df: pd.DataFrame) -> Dict[str, Any]:
         score += 40
         reasons.append("W_CONVERGENCE_BEAR")
 
-    # ─── Dirección ───────────────────────────────────────────────
+    # ═══════════════════════════════════════════════════════════
+    # FASE 3: CVD Divergence + Taker Buy Whale
+    # ═══════════════════════════════════════════════════════════
+
+    # Señal 6: CVD Divergence (acumulación/distribución oculta)
+    div_type, div_strength = cvd_divergence(df, window=96)
+    if div_type == 'BULLISH' and div_strength > 0.5:
+        score += 50
+        reasons.append(f"W_CVD_DIV_BULL_STRONG(str={div_strength:.2f})")
+    elif div_type == 'BULLISH' and div_strength > 0.15:
+        score += 25
+        reasons.append(f"W_CVD_DIV_BULL(str={div_strength:.2f})")
+    elif div_type == 'BEARISH' and div_strength > 0.5:
+        score += 30
+        reasons.append(f"W_CVD_DIV_BEAR(str={div_strength:.2f})")
+
+    # Señal 7: Taker Buy Whale
+    taker_pts, taker_reason = taker_buy_whale_score(df)
+    if taker_pts > 0 and taker_reason:
+        score += taker_pts
+        reasons.append(taker_reason)
+
+    # ═══════════════════════════════════════════════════════════
+    # FASE 2: Order Book Score
+    # ═══════════════════════════════════════════════════════════
+
+    ob_bids = ctx.get('ob_bids', [])
+    ob_asks = ctx.get('ob_asks', [])
+    if ob_bids and ob_asks:
+        ob_pts, ob_reasons = orderbook_score(ob_bids, ob_asks)
+        if ob_pts > 0:
+            score += ob_pts
+            reasons.extend(ob_reasons)
+
+    # ═══════════════════════════════════════════════════════════
+    # FASE 1: On-Chain Context
+    # ═══════════════════════════════════════════════════════════
+
+    # Señal OI Delta
+    oi_pts, oi_reason, oi_dir = oi_delta_score(ctx.get('oi_history', []))
+    if oi_pts > 0 and oi_reason:
+        score += oi_pts
+        reasons.append(oi_reason)
+
+    # Señal Funding Rate
+    fr_pts, fr_reason = funding_rate_score(ctx.get('funding_list', []))
+    if fr_pts > 0 and fr_reason:
+        score += fr_pts
+        reasons.append(fr_reason)
+
+    # Señal Long/Short Ratio
+    ls_pts, ls_reason = long_short_ratio_score(ctx.get('ls_data', []))
+    if ls_pts > 0 and ls_reason:
+        score += ls_pts
+        reasons.append(ls_reason)
+
+    # ═══════════════════════════════════════════════════════════
+    # FASE 4: Mega-Trades
+    # ═══════════════════════════════════════════════════════════
+
+    mega_pts, mega_reason = mega_trade_score(ctx.get('agg_trades', []))
+    if mega_pts > 0 and mega_reason:
+        score += mega_pts
+        reasons.append(mega_reason)
+
+    # ─── Dirección ──────────────────────────────────────────────
     bull_pts = (
         (50 if cv_slope > 0.05 else 30 if cv_slope > 0.02 else 0) +
         len(bull_sweeps) * 15 +
-        (20 if vc_bias > 0.50 else 0)
+        (20 if vc_bias > 0.50 else 0) +
+        (50 if div_type == 'BULLISH' and div_strength > 0.5 else
+         25 if div_type == 'BULLISH' else 0) +
+        (taker_pts if 'BUY' in (taker_reason or '') else 0) +
+        (oi_pts if oi_dir == 'LONG' else 0)
     )
     bear_pts = (
         (50 if cv_slope < -0.05 else 30 if cv_slope < -0.02 else 0) +
-        len(bear_sweeps) * 15
+        len(bear_sweeps) * 15 +
+        (30 if div_type == 'BEARISH' and div_strength > 0.5 else 0) +
+        (taker_pts if 'SELL' in (taker_reason or '') else 0) +
+        (oi_pts if oi_dir == 'SHORT' else 0)
     )
 
     if bull_pts > bear_pts + 10:
@@ -322,14 +712,14 @@ def whale_score(df: pd.DataFrame) -> Dict[str, Any]:
     else:
         direction = 'NEUTRAL'
 
-    # ─── Confianza ────────────────────────────────────────────────
-    if score >= 250:
+    # ─── Confianza (ajustada al nuevo rango de score) ───────────
+    if score >= CONFIDENCE_ULTRA:
         confidence = 'ULTRA'
-    elif score >= 160:
+    elif score >= CONFIDENCE_HIGH:
         confidence = 'HIGH'
-    elif score >= 90:
+    elif score >= CONFIDENCE_MEDIUM:
         confidence = 'MEDIUM'
-    elif score >= 40:
+    elif score >= CONFIDENCE_LOW:
         confidence = 'LOW'
     else:
         confidence = 'NONE'

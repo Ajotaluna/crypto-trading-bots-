@@ -1,7 +1,20 @@
-# .gitignore — Nueva carpeta (repo raíz)
-# Unifica reglas globales y específicas del trend_following_bot.
+# .gitignore — Crypto Trend Bot
+# Cubre todo el repo: archivos sensibles, datos pesados, temporales y artefactos locales.
+# Lo que NO aparece aquí se versiona y es parte del código fuente desplegable.
 
-# ─── Python ───────────────────────────────────────────────────
+# ─── 🔐 SECRETOS Y CLAVES — NUNCA al repo ─────────────────────
+.env
+*.env
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.json
+api_keys.json
+trend_following_bot/id_trend_bot
+trend_following_bot/id_trend_bot.pub
+
+# ─── 🐍 Python ────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
@@ -19,7 +32,7 @@ htmlcov/
 .coverage
 .coverage.*
 
-# ─── Entorno virtual ──────────────────────────────────────────
+# ─── 📦 Entorno virtual ───────────────────────────────────────
 venv/
 .venv/
 env/
@@ -29,53 +42,51 @@ Scripts/
 Include/
 pyvenv.cfg
 
-# ─── Secretos y claves ────────────────────────────────────────
-.env
-*.env
-*.pem
-*.key
-trend_following_bot/id_trend_bot
-trend_following_bot/id_trend_bot.pub
-secrets.json
-api_keys.json
-
-# ─── Logs ─────────────────────────────────────────────────────
+# ─── 📋 Logs y estado dinámico (cambia en producción) ─────────
 logs/
 *.log
 trend_bot.log
-backtest_results/
+stats.json
+win_rate_data.json
+trade_history.json
+performance_report*.json
+daily_pnl*.json
 
-# ─── Datos históricos y caché (pesados, no necesarios en server)
+# ─── 💾 Datos históricos y caché (pesados, no se despliegan) ──
 data_cache/
 backtest_data/
 calibration_data/
+
 trend_following_bot/data_cache/
 trend_following_bot/backtest_data/
+
+# nascent_scanner: solo ignorar datos, NO el código fuente
 trend_following_bot/nascent_scanner/data/
 trend_following_bot/nascent_scanner/data_monthly/
 trend_following_bot/nascent_scanner/data_30d/
 trend_following_bot/nascent_scanner/backtest_results/
+trend_following_bot/nascent_scanner/reports/
+trend_following_bot/nascent_scanner/__pycache__/
+
+# Formatos de datos pesados
 *.csv
 *.parquet
 *.pickle
 *.pkl
 *.h5
 *.hdf5
+*.npy
+*.npz
 
-# ─── Carpetas obsoletas / backups locales ─────────────────────
+# ─── 🗑️ Carpetas de desarrollo local (NO producción) ──────────
 legacy_backup/
-strategy_lab/
 _legacy_archive/
-fortress_bot/
+forex_trend_bot/
+
 trend_following_bot/legacy_backup/
 trend_following_bot/strategy_lab/
-trend_following_bot/nascent_scanner/
-*_backup.py
-*_backup*/
-*.bak
-*.old
 
-# ─── IDEs y herramientas de desarrollo ────────────────────────
+# ─── 🛠️ IDEs y herramientas locales ──────────────────────────
 .vscode/
 .idea/
 *.code-workspace
@@ -84,23 +95,40 @@ trend_following_bot/nascent_scanner/
 Thumbs.db
 desktop.ini
 
-# ─── Notebooks ────────────────────────────────────────────────
+# ─── 📓 Notebooks ─────────────────────────────────────────────
 *.ipynb
 .ipynb_checkpoints/
 
-# ─── Archivos temporales ──────────────────────────────────────
+# ─── 💡 Archivos temporales ───────────────────────────────────
 *.tmp
 *.temp
+*.bak
+*.old
 ~$*
 
-# ─── Archivos locales de test y notas ─────────────────────────
+# ─── 🧪 Scripts de desarrollo / notas locales (no prod) ───────
 porqueria.txt
-stats.json
 trend_following_bot/test_prod_fix.py
 trend_following_bot/generate_whitelist.py
-trend_following_bot/sniper_mechanics_design.md
 trend_following_bot/main_backup.py
+trend_following_bot/sniper_mechanics_design.md
+
+# Cualquier test*.py dentro del bot principal (los del nascent_scanner SÍ se versionan)
 trend_following_bot/test*.py
-trend_following_bot/*.md
+
+# Archivos de texto/markdown ad-hoc dentro del bot
 trend_following_bot/*.txt
-forex_trend_bot
+
+# ─── ✅ LO QUE SÍ SE VERSIONA (aclaración explícita) ──────────
+# Estos archivos son parte del funcionamiento del bot en producción:
+#   whitelist.json        → universo de pares calibrado con el backtest
+#   blacklist.json        → pares bloqueados por el operador
+#   market_config.json    → parámetros de mercado
+#   requirements.txt      → dependencias pip
+#   Dockerfile            → imagen Docker
+#   docker-compose.yml    → configuración de despliegue
+#   deploy.sh             → script de despliegue al servidor
+#   README.md             → documentación
+#   run_trend_bot.py      → entrypoint del bot
+#   Todo el código .py en trend_following_bot/ y nascent_scanner/
+# No uses /!whitelist.json en gitignore — la ausencia en este archivo es suficiente.
