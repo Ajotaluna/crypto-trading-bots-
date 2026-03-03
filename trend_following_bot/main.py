@@ -262,7 +262,9 @@ class TrendBot:
                 else:
                     universe = universe[:100]  # Analizar top-100 por volumen como muestra
                     pair_data = {}
-                    sem = asyncio.Semaphore(8)
+                    sem = asyncio.Semaphore(5)  # Max 5 requests paralelos (bajo para evitar 418)
+                    BATCH_SIZE      = 20        # Pares por batch
+                    BATCH_WAIT_SEC  = 0.5       # Pausa entre batches para no saturar el API
 
                     async def _fetch_klines(sym):
                         try:
@@ -273,8 +275,15 @@ class TrendBot:
                         except Exception:
                             pass  # Error en un par individual no cancela el resto
 
-                    await asyncio.gather(*[_fetch_klines(s) for s in universe])
+                    # Fetch en batches con pausa entre grupos (igual que whale scanner)
+                    for batch_start in range(0, len(universe), BATCH_SIZE):
+                        batch = universe[batch_start:batch_start + BATCH_SIZE]
+                        await asyncio.gather(*[_fetch_klines(s) for s in batch])
+                        if batch_start + BATCH_SIZE < len(universe):
+                            await asyncio.sleep(BATCH_WAIT_SEC)  # Pausa anti-ban
+
                     logger.info(f"📡 Anomaly Scan: {len(pair_data)}/{len(universe)} pares con datos listos")
+
 
                     anomaly_picks = await asyncio.to_thread(
                         self.scanner.score_universe,
