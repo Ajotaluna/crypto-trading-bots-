@@ -335,6 +335,12 @@ class TrendBot:
             # Añadir anomaly picks al watchlist primero
             self.daily_watchlist = list(anomaly_picks)
 
+            # ─── PAUSA ANTI-BAN: 60s entre scans ─────────────────────
+            # El anomaly scanner hace ~100 requests. Esperamos a que el
+            # rate limit de Binance se restablezca antes del whale scan.
+            logger.info("⏳ Pausa anti-ban 60s entre Anomaly Scan y Whale Scan...")
+            await asyncio.sleep(60)
+
             # ─── WHALE SCAN: top-15 adicionales ──────────────────────
             logger.info("🐋 WHALE SCAN: escaneando todo el mercado en batches de 50...")
             try:

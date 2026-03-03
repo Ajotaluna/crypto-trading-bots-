@@ -108,33 +108,47 @@ async def _get_universe(market) -> List[str]:
     except Exception as e:
         logger.debug(f"get_trading_universe fallback: {e}")
 
-    # Fallback REST directo
-    try:
-        import requests
-        resp = requests.get(
-            "https://fapi.binance.com/fapi/v1/ticker/24hr",
-            timeout=10,
-        )
-        resp.raise_for_status()
-        tickers = resp.json()
-        min_vol = MIN_VOL_USDT_M * 1_000_000
-        symbols = [
-            t['symbol'] for t in tickers
-            if t['symbol'].endswith('USDT')
-            and t['symbol'] not in BLACKLIST
-            and float(t.get('quoteVolume', 0)) >= min_vol
-        ]
-        symbols.sort(
-            key=lambda s: float(next(
-                (t['quoteVolume'] for t in tickers if t['symbol'] == s), 0
-            )),
-            reverse=True,
-        )
-        logger.info(f"🌍 Universo via REST directo: {len(symbols)} pares")
-        return symbols
-    except Exception as e:
-        logger.error(f"Error obteniendo universo: {e}")
-        return []
+    # Fallback REST con reintentos y backoff exponencial (maneja 418)
+    import requests, time as _time
+    BACKOFFS = [5, 10, 20]  # segundos entre reintentos
+    for attempt, wait in enumerate(BACKOFFS, 1):
+        try:
+            resp = requests.get(
+                "https://fapi.binance.com/fapi/v1/ticker/24hr",
+                timeout=10,
+            )
+            if resp.status_code == 418:
+                retry_after = int(resp.headers.get('Retry-After', wait))
+                logger.warning(
+                    f"⚠️ 418 Ban en ticker/24hr (intento {attempt}/3). "
+                    f"Esperando {retry_after}s antes de reintentar..."
+                )
+                _time.sleep(retry_after)
+                continue
+            resp.raise_for_status()
+            tickers = resp.json()
+            min_vol = MIN_VOL_USDT_M * 1_000_000
+            symbols = [
+                t['symbol'] for t in tickers
+                if t['symbol'].endswith('USDT')
+                and t['symbol'] not in BLACKLIST
+                and float(t.get('quoteVolume', 0)) >= min_vol
+            ]
+            symbols.sort(
+                key=lambda s: float(next(
+                    (t['quoteVolume'] for t in tickers if t['symbol'] == s), 0
+                )),
+                reverse=True,
+            )
+            logger.info(f"🌍 Universo via REST (intento {attempt}): {len(symbols)} pares")
+            return symbols
+        except Exception as e:
+            logger.warning(f"🌍 Intento {attempt}/3 fallo: {e} — esperando {wait}s...")
+            _time.sleep(wait)
+
+    logger.error("❌ No se pudo obtener el universo tras 3 intentos. Retornando lista vacia.")
+    return []
+
 
 
 # ===================================================================

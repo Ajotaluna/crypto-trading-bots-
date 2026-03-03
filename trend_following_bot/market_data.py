@@ -346,6 +346,12 @@ class MarketData:
                 return self.session.get(url, timeout=10)
             
             resp = await asyncio.to_thread(_fetch)
+
+            if resp.status_code == 418:
+                retry_after = int(resp.headers.get('Retry-After', 30))
+                logger.warning(f"⚠️ 418 Ban en ticker/24hr — IP baneada temporalmente. Retry-After: {retry_after}s")
+                return []  # No reintentar — la caché protegerá el siguiente ciclo
+
             if resp.status_code == 200:
                 data = resp.json()
                 valid_pairs = []
@@ -360,9 +366,13 @@ class MarketData:
                 valid_pairs.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
                 self._cached_universe = [x['symbol'] for x in valid_pairs[:limit]]
                 return self._cached_universe
+            else:
+                logger.warning(f"ticker/24hr status {resp.status_code}: {resp.text[:100]}")
+                return []
         except Exception as e:
             logger.error(f"Fallback Scan Failed: {e}")
             return []
+
 
     # Wrapper for backward compatibility if needed, but confusing. Removed.
 
