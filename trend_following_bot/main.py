@@ -256,32 +256,40 @@ class TrendBot:
             try:
                 # Obtener klines de los pares del universo para el scanner
                 universe = await self.market.get_trading_universe()
-                universe = universe[:100]  # Analizar top-100 por volumen como muestra
-                pair_data = {}
-                sem = asyncio.Semaphore(8)
+                if not universe:
+                    logger.warning("Anomaly Scan: get_trading_universe() retorno None o vacio — saltando")
+                    anomaly_picks = []
+                else:
+                    universe = universe[:100]  # Analizar top-100 por volumen como muestra
+                    pair_data = {}
+                    sem = asyncio.Semaphore(8)
 
-                async def _fetch_klines(sym):
-                    async with sem:
-                        df = await self.market.get_klines(sym, interval='15m', limit=200)
-                        if df is not None and not df.empty and len(df) >= 96:
-                            pair_data[sym] = df
+                    async def _fetch_klines(sym):
+                        try:
+                            async with sem:
+                                df = await self.market.get_klines(sym, interval='15m', limit=200)
+                                if df is not None and not df.empty and len(df) >= 96:
+                                    pair_data[sym] = df
+                        except Exception:
+                            pass  # Error en un par individual no cancela el resto
 
-                await asyncio.gather(*[_fetch_klines(s) for s in universe])
+                    await asyncio.gather(*[_fetch_klines(s) for s in universe])
+                    logger.info(f"📡 Anomaly Scan: {len(pair_data)}/{len(universe)} pares con datos listos")
 
-                anomaly_picks = self.scanner.score_universe(
-                    pair_data,
-                    now_idx=200,
-                    top_n=10,
-                    boot_mode=boot,
-                )
-                # Convertir al formato del watchlist
-                for p in anomaly_picks:
-                    p.setdefault('confidence', 'MEDIUM')
-                logger.info(f"📡 Anomaly picks: {len(anomaly_picks)} ({'boot' if boot else 'live'} mode)")
-                for p in anomaly_picks[:5]:
-                    logger.info(f"  [ANOMALY] {p['symbol']:12s} ({p['direction']:5s}) score={p['score']} | {p['reasons'][:60]}")
+                    anomaly_picks = self.scanner.score_universe(
+                        pair_data,
+                        now_idx=200,
+                        top_n=10,
+                        boot_mode=boot,
+                    )
+                    # Asignar confidence si no viene del scorer (modo boot)
+                    for p in anomaly_picks:
+                        p.setdefault('confidence', 'HIGH')
+                    logger.info(f"📡 Anomaly picks: {len(anomaly_picks)} ({'boot' if boot else 'live'} mode)")
+                    for p in anomaly_picks[:5]:
+                        logger.info(f"  [ANOMALY] {p['symbol']:12s} ({p['direction']:5s}) score={p['score']} conf={p.get('confidence','?')} | {p.get('reasons','')[:60]}")
             except Exception as ae:
-                logger.error(f"Anomaly Scan Error: {ae}")
+                logger.error(f"Anomaly Scan Error: {ae}", exc_info=True)
                 anomaly_picks = []
 
             # Marcar que el primer scan ya ocurrió
