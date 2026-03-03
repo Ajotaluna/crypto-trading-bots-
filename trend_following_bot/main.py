@@ -276,11 +276,13 @@ class TrendBot:
                     await asyncio.gather(*[_fetch_klines(s) for s in universe])
                     logger.info(f"📡 Anomaly Scan: {len(pair_data)}/{len(universe)} pares con datos listos")
 
-                    anomaly_picks = self.scanner.score_universe(
+                    anomaly_picks = await asyncio.to_thread(
+                        self.scanner.score_universe,
                         pair_data,
-                        now_idx=200,
-                        top_n=10,
-                        boot_mode=boot,
+                        200,   # now_idx
+                        10,    # top_n
+                        None,  # long_ratio
+                        boot,  # boot_mode
                     )
                     # Asignar confidence si no viene del scorer (modo boot)
                     for p in anomaly_picks:
