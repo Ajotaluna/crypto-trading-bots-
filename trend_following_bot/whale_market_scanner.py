@@ -28,7 +28,7 @@ logger = logging.getLogger("WhaleMarketScanner")
 
 BATCH_SIZE       = 50     # Pares por iteración
 MIN_VOL_USDT_M   = 5.0    # Volumen mínimo 24h en millones USDT
-MIN_SCORE        = 90     # Score mínimo: MEDIUM+ (umbral ajustado al nuevo rango)
+MIN_SCORE        = 130    # Score mínimo: señales sólidas (HIGH+ en nuevo rango)
 KLINES_LIMIT     = 200    # Velas a descargar por par
 KLINES_INTERVAL  = '15m'  # Intervalo de las velas
 CONCURRENCY      = 8      # Descargas paralelas dentro de cada batch

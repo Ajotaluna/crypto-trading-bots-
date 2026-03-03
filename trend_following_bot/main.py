@@ -22,6 +22,7 @@ from scanner_anomaly import AnomalyScanner
 from whale_market_scanner import scan_whale_universe
 from whale_watcher import WhaleWatcher
 from orderbook_streamer import OrderbookStreamer
+from market_regime import get_live_regime, REGIME_RANGING, REGIME_CONFIG
 from trading_strategy import (
     confirm_entry, 
     calculate_indicators, 
@@ -44,6 +45,11 @@ from trading_strategy import (
     SCALE_LEVEL_3,
     MAX_SCALE
 )
+
+# Slots independientes por scanner: cada canal tiene su propio cupo
+# Total max posiciones abiertas = ANOMALY_SLOTS + WHALE_SLOTS = 6
+ANOMALY_SLOTS = 3   # Max posiciones desde AnomalyScanner
+WHALE_SLOTS   = 3   # Max posiciones desde Whale Scanner (HIGH + ULTRA)
 
 # Setup logging
 if not os.path.exists('logs'):
@@ -71,6 +77,11 @@ class TrendBot:
         # Strategies
         self.scanner = AnomalyScanner()
 
+        # Boot mode flag — primer scan ignora tendencias ya activas
+        self.is_first_scan = True
+        self.current_regime = {'regime': REGIME_RANGING, 'config': REGIME_CONFIG[REGIME_RANGING],
+                               'description': 'Init', 'adx': 0}
+
         # Whale scanner
         self.whale_watchlist: list = []   # Top-15 pares con señal de ballena
         self.whale_watcher = WhaleWatcher()
@@ -78,7 +89,9 @@ class TrendBot:
         self.ob_streamer = OrderbookStreamer(depth=20, update_speed="100ms")
 
         self.daily_watchlist = []  # Top-10 anomaly + hasta 15 whale (sin duplicados)
-        self.pos_state = {}  # Local state tracker (backtest PositionManager alignment)
+        self.pos_state = {}  # Local state tracker
+        # Tracking de layer por posicion abierta: {symbol: 'ANOMALY'|'WHALE'}
+        self.pos_layer: dict = {}
         
         # SCOREBOARD
         self.tracker = WinRateTracker()
@@ -218,10 +231,65 @@ class TrendBot:
                 await asyncio.sleep(60)
 
     async def run_macro_scan(self):
-        """Runs Whale Scanner exclusively (Anomaly Scanner disabled by user)."""
+        """Double Funnel Macro Scan: Anomaly Scanner (nacientes) + Whale Scanner."""
         try:
             self.daily_watchlist = []
-            logger.info("🔭 MACRO SCAN: Anomaly Scanner (Física de Origen) is DISABLED.")
+            boot = self.is_first_scan
+            scan_mode = "BOOT (ignorar tendencias >4h)" if boot else "CONTINUO (detectar nacientes ≤3 velas)"
+            logger.info(f"🔭 ANOMALY SCAN [{scan_mode}]...")
+
+            # ─── RÉGIMEN DE MERCADO: barómetro BTC antes de cualquier scan ─
+            regime = await get_live_regime(self.market)
+            self.current_regime = regime
+            regime_cfg  = regime['config']
+            max_slots   = regime_cfg['max_signals']
+            long_bias   = regime_cfg['long_bias']
+            short_bias  = regime_cfg['short_bias']
+            size_mult   = regime_cfg['size_mult']
+            logger.info(
+                f"📊 RÉGIMEN: {regime['regime']} | ADX:{regime['adx']} | "
+                f"ATR×{regime['atr_ratio']} | {regime['description']}"
+            )
+            logger.info(f"   Slots: {max_slots} | LongBias: {long_bias}x | ShortBias: {short_bias}x | Size: {size_mult}x")
+
+            # ─── ANOMALY SCAN: buscar nacientes (usa klines del mercado) ─
+            try:
+                # Obtener klines de los pares del universo para el scanner
+                universe = await self.market.get_trading_universe()
+                universe = universe[:100]  # Analizar top-100 por volumen como muestra
+                pair_data = {}
+                sem = asyncio.Semaphore(8)
+
+                async def _fetch_klines(sym):
+                    async with sem:
+                        df = await self.market.get_klines(sym, interval='15m', limit=200)
+                        if df is not None and not df.empty and len(df) >= 96:
+                            pair_data[sym] = df
+
+                await asyncio.gather(*[_fetch_klines(s) for s in universe])
+
+                anomaly_picks = self.scanner.score_universe(
+                    pair_data,
+                    now_idx=200,
+                    top_n=10,
+                    boot_mode=boot,
+                )
+                # Convertir al formato del watchlist
+                for p in anomaly_picks:
+                    p.setdefault('confidence', 'MEDIUM')
+                logger.info(f"📡 Anomaly picks: {len(anomaly_picks)} ({'boot' if boot else 'live'} mode)")
+                for p in anomaly_picks[:5]:
+                    logger.info(f"  [ANOMALY] {p['symbol']:12s} ({p['direction']:5s}) score={p['score']} | {p['reasons'][:60]}")
+            except Exception as ae:
+                logger.error(f"Anomaly Scan Error: {ae}")
+                anomaly_picks = []
+
+            # Marcar que el primer scan ya ocurrió
+            if self.is_first_scan:
+                self.is_first_scan = False
+
+            # Añadir anomaly picks al watchlist primero
+            self.daily_watchlist = list(anomaly_picks)
 
             # ─── WHALE SCAN: top-15 adicionales ──────────────────────
             logger.info("🐋 WHALE SCAN: escaneando todo el mercado en batches de 50...")
@@ -233,23 +301,28 @@ class TrendBot:
                 logger.error(f"Whale Scan Error: {we}")
                 whale_picks = []
 
-            # Solo señales HIGH/ULTRA al watchlist (filtramos LOW y MEDIUM)
-            whale_picks_filtered = [
+            # Con trail 4 ATR solo entran al watchlist activo HIGH + ULTRA.
+            whale_picks_high_ultra = [
                 p for p in whale_picks
                 if p.get('confidence') in ('HIGH', 'ULTRA')
             ]
+            whale_picks_low = [
+                p for p in whale_picks
+                if p.get('confidence') not in ('HIGH', 'ULTRA')
+            ]
             logger.info(
                 f"🐋 Whale picks totales: {len(whale_picks)} | "
-                f"Filtrados HIGH/ULTRA: {len(whale_picks_filtered)}"
+                f"HIGH+ULTRA (ejecutan): {len(whale_picks_high_ultra)} | "
+                f"LOW/MEDIUM (descartados): {len(whale_picks_low)}"
             )
-            self.whale_watchlist = whale_picks_filtered
-            # Actualizar el watcher con los nuevos pares
-            self.whale_watcher.update_pairs(whale_picks_filtered)
+            # Watcher monitorea todos pero solo HIGH+ULTRA entran al watchlist
+            self.whale_watchlist = whale_picks_high_ultra
+            self.whale_watcher.update_pairs(whale_picks_high_ultra)
 
-            # Merge: anomaly + whale HIGH/ULTRA (sin duplicados, por orden de score DESC)
+            # Merge: anomaly + whale HIGH/ULTRA (sin duplicados, separados por layer)
             existing_syms = {p['symbol'] for p in self.daily_watchlist}
             added_whale = 0
-            for wp in whale_picks_filtered:
+            for wp in whale_picks_high_ultra:
                 if wp['symbol'] not in existing_syms:
                     self.daily_watchlist.append(wp)
                     existing_syms.add(wp['symbol'])
@@ -270,11 +343,12 @@ class TrendBot:
 
             logger.info(
                 f"✅ WATCHLIST FINAL: {len(self.daily_watchlist)} pares "
-                f"(whale={added_whale} únicos)"
+                f"(anomaly={len(self.daily_watchlist)-added_whale} | whale={added_whale})"
             )
             for p in self.daily_watchlist:
                 layer = p.get('layer', 'ANOMALY')
-                logger.info(f"  [{layer:7s}] {p['symbol']:12s} ({p['direction']:5s}) | "
+                conf  = p.get('confidence', '?')
+                logger.info(f"  [{layer:7s}][{conf:5s}] {p['symbol']:12s} ({p['direction']:5s}) | "
                             f"Score: {p['score']:3d} | {p.get('reasons','')[:70]}")
 
         except Exception as e:
@@ -362,11 +436,20 @@ class TrendBot:
                 if len(self.market.positions) >= MAX_SIGNALS:
                     logger.info(f"⛔ WHALE ENTRY {sym}: capacidad llena ({MAX_SIGNALS}/{MAX_SIGNALS})")
                     continue
+                # Verificar capacidad total y de layer WHALE
                 if sym in self.market.positions:
                     logger.info(f"⚠️  WHALE ENTRY {sym}: posición ya abierta, ignorando")
                     continue
+                whale_open = sum(1 for s, l in self.pos_layer.items()
+                                 if l == 'WHALE' and s in self.market.positions)
+                if whale_open >= WHALE_SLOTS:
+                    logger.info(f"⛔ WHALE ENTRY {sym}: slots WHALE llenos ({whale_open}/{WHALE_SLOTS})")
+                    continue
                 if not self.blacklist.is_allowed(sym):
                     logger.info(f"🚫 WHALE ENTRY {sym}: en blacklist, ignorando")
+                    continue
+                if len(self.market.positions) >= ANOMALY_SLOTS + WHALE_SLOTS:
+                    logger.info(f"⛔ WHALE ENTRY {sym}: máx posiciones totales alcanzado ({ANOMALY_SLOTS + WHALE_SLOTS})")
                     continue
 
                 # ─── FILTRO BTC (tendencia macro) ─────────────────────────
@@ -427,11 +510,13 @@ class TrendBot:
                         'direction':     direction,
                         'score':         whale_signal.get('score', 0),
                         'strategy_mode': 'WHALE',
+                        'layer':         'WHALE',
                         'reasons':       whale_signal.get('reasons', 'WHALE_MOVE'),
                     }
                     logger.info(
                         f"⚡ WHALE ENTRY: entrando en {sym} {direction} "
-                        f"(score={signal['score']}, confianza={whale_signal.get('confidence','?')})"
+                        f"(score={signal['score']}, confianza={whale_signal.get('confidence','?')}) "
+                        f"[slots WHALE: {whale_open+1}/{WHALE_SLOTS}]"
                     )
                     await self.execute_trade(sym, signal, df_ind)
 
@@ -445,11 +530,21 @@ class TrendBot:
                 await asyncio.sleep(5)
 
     async def check_micro_entry(self, symbol, direction, pick_info):
-
         """Runs confirm_entry on the specific candidate with detailed logging."""
         try:
-            limit = 100 
+            # Verificar slots de ANOMALY antes de bajar klines
+            anomaly_open = sum(1 for s, l in self.pos_layer.items()
+                               if l == 'ANOMALY' and s in self.market.positions)
+            total_open   = len(self.market.positions)
+            if anomaly_open >= ANOMALY_SLOTS:
+                logger.debug(f"⛔ ANOMALY slot lleno ({anomaly_open}/{ANOMALY_SLOTS}): {symbol} ignorado")
+                return
+            if total_open >= ANOMALY_SLOTS + WHALE_SLOTS:
+                logger.debug(f"⛔ Posiciones totales al máx ({total_open}): {symbol} ignorado")
+                return
+            limit = 200
             df = await self.market.get_klines(symbol, interval='15m', limit=limit)
+
             if df.empty:
                 logger.warning(f"📭 {symbol}: No klines data available")
                 return
@@ -494,9 +589,15 @@ class TrendBot:
                     'direction': direction,
                     'score': pick_info['score'],
                     'strategy_mode': 'TREND',
+                    'layer':         pick_info.get('layer', 'ANOMALY'),
                     'reasons': pick_info['reasons']
                 }
-                
+                anomaly_lbl = anomaly_open + 1
+                logger.info(
+                    f"✨ ANOMALY ENTRY: {symbol} ({direction}) confirmado! "
+                    f"[slots ANOMALY: {anomaly_lbl}/{ANOMALY_SLOTS}] "
+                    f"confianza={pick_info.get('confidence','?')}"
+                )
                 await self.execute_trade(symbol, signal, df_indicators)
                 
         except Exception as e:
@@ -533,8 +634,12 @@ class TrendBot:
         
         result = await self.market.open_position(symbol, signal['direction'], amount, sl, tp)
         if result:
-            logger.info(f"🔫 OPEN SUCCESS {symbol}")
+            layer = signal.get('layer', 'ANOMALY')
+            logger.info(f"🔫 OPEN SUCCESS {symbol} [{layer}]")
             
+            # Registrar layer de la posicion para tracking de slots por scanner
+            self.pos_layer[symbol] = layer
+
             # Initialize local state tracker (matches backtest PositionManager)
             pid = PIDController(Kp=0.4, Ki=0.0, Kd=0.1, setpoint=0, output_limits=(-0.8, 0.5))
             self.pos_state[symbol] = {
@@ -546,9 +651,10 @@ class TrendBot:
                 'scale_level': 1,
                 'total_amount': margin,
                 'entry_price': curr_price,
-                'last_sl_update': 0,  # Timestamp of last SL update (cooldown)
-                'failed_sl_count': 0, # Consecutive failures counter
+                'last_sl_update': 0,
+                'failed_sl_count': 0,
             }
+
 
     async def scale_into_position(self, symbol, direction, notional):
         """Add to an existing position (scaling entry)."""
@@ -610,6 +716,7 @@ class TrendBot:
         closed_symbols = [s for s in self.pos_state if s not in self.market.positions]
         for s in closed_symbols:
             self.pos_state.pop(s, None)
+            self.pos_layer.pop(s, None)
 
     async def _process_single_position(self, symbol, pos):
         # Using if True to maintain the original 12-space indentation of the loop body
@@ -620,6 +727,7 @@ class TrendBot:
                 logger.warning(f"🚨 ANTI-CRASH RADAR {symbol} {pos['side']}: Muro a {wall_dist:.2f}%. Huyendo!")
                 await self.market.close_position(symbol, "ORDERBOOK_WALL_DETECTED")
                 self.pos_state.pop(symbol, None)
+                self.pos_layer.pop(symbol, None)
                 return
 
             # Initialize state for orphaned positions (e.g., after bot restart)
@@ -689,6 +797,7 @@ class TrendBot:
                 logger.warning(f"🛑 {reason}: {symbol}")
                 await self.market.close_position(symbol, reason)
                 self.pos_state.pop(symbol, None)
+                self.pos_layer.pop(symbol, None)
                 return
             
             # --- 2. CHECK SCALING (before BE lock, matches backtest) ---

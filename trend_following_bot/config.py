@@ -55,7 +55,7 @@ class Config:
     STOP_LOSS_PCT = 1.5              # Base Stop distance (will be dynamic)
     TAKE_PROFIT_PCT = 25.0           # INFINITY MODE: 25% Ceiling (Let Trailing Stop exit)
     
-    MAX_OPEN_POSITIONS = 5          # Limit to 5 Concurrent Trades (Waterfall Focus)
+    MAX_OPEN_POSITIONS = 6          # Limit to 5 Concurrent Trades (Waterfall Focus)
     CAPITAL_PER_TRADE_PCT = 0.0      # DEPRECATED in favor of Risk Sizing
     LEVERAGE = 5                     # 5x
     MARGIN_TYPE = 'ISOLATED'         # ISOLATED or CROSSED

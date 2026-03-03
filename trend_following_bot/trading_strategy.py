@@ -18,7 +18,7 @@ COMMISSION = 0.04 / 100       # 0.04% per side
 RISK_PER_ENTRY = 0.01         # 1% equity per entry
 MAX_CAPITAL_PER_TRADE = 0.10  # 10% max position size per entry
 MAX_SIGNALS = 5               # Max concurrent signals being tracked
-MAX_HOLD_CANDLES = 96         # 24h max hold (reduced from 160)
+MAX_HOLD_CANDLES = 144        # 36h max hold — tendencias fuertes duran más de 24h
 DAILY_LOSS_CAP = 0.08         # 8% daily loss cap
 
 CANDLES_PER_DAY = 96
@@ -26,10 +26,10 @@ HISTORY_NEEDED = 480
 WARMUP_DAYS = 5               # 5 days calibration per pair
 TOP_N = 10
 
-# SL/Trailing config — DATA-DRIVEN (High Win Rate Config)
-INITIAL_SL_ATR = 5.0          # Wide SL: 50% of winning MAE survived
-BE_LOCK_ATR = 1.5             # Lock BE after 1.5 ATR
-TRAIL_DISTANCE_ATR = 2.0      # Trail 2.0 ATR
+# SL/Trailing config — optimizado tras backtest (los SL grandes de 5 ATR destruyen el RR)
+INITIAL_SL_ATR = 2.5          # SL ajustado: reduce avg_loss de $20 a ~$10
+BE_LOCK_ATR = 1.0              # BE lock más rápido: proteger antes de que el trail sea inútil
+TRAIL_DISTANCE_ATR = 2.5      # Trail 2.5 ATR — balance entre tendencia y protección
 
 # Scaled entry levels
 SCALE_LEVEL_2 = 1.5           # Add 2nd entry at -1.5 ATR pullback
@@ -46,7 +46,7 @@ ENTRY_WINDOW_CANDLES = 48     # 12h entry window (trends develop slowly)
 # ================================================================
 # KALMAN FILTER LOGIC
 # ================================================================
-def apply_kalman_filter(prices, q=0.05, r=5.0):
+def apply_kalman_filter(prices, q=0.01, r=8.0):
     """
     Apply a 1D Kalman Filter (Constant Velocity Model).
     q: Process noise covariance (sensitivity to change)
@@ -184,9 +184,8 @@ def calculate_indicators(df):
     df['ema_50'] = close.ewm(span=50, adjust=False).mean()
 
     # == KALMAN FILTER ==
-    # Using q=0.02, r=10.0 for distinct trend following on 15m
-    kf_price, kf_slope = apply_kalman_filter(close.values, q=0.02, r=10.0)
-    df['kf_price'] = kf_price
+    # q=0.01 (suave) para que el slope sea una referencia de tendencia limpia
+    kf_price, kf_slope = apply_kalman_filter(close.values, q=0.01, r=8.0)
     df['kf_price'] = kf_price
     df['kf_slope'] = kf_slope
 
@@ -235,77 +234,134 @@ def calculate_indicators(df):
 
 
 # ================================================================
-# ENTRY CONFIRMATION
+# ENTRY CONFIRMATION - DYNAMIC CONTEXTUAL FILTERS
 # ================================================================
 def confirm_entry(df, direction):
     """
-    Confirm entry TIMING using KALMAN FILTER.
+    Confirma el TIMING de entrada usando FILTROS DINAMICOS POR PAR.
+
+    Cada umbral se calcula contra el historial propio del par.
+    Un ADX de 22 puede ser "tendencia fuerte" para XNYUSDT y "rango" para BTC.
+    9 filtros adaptativos:
+      1. ADX percentil 55 propio
+      2. Volumen z-score > 0.6 sobre media propia
+      3. Fuerza/posicion de vela vs percentil 40 del par
+      4. KF Slope normalizado (percentil 55 del slope abs del par)
+      5. RSI momentum zone dinamica (rango reciente del par)
+      6. MACD histograma alineado
+      7. Extension vs KF < percentil 80 del par
+      8. Precio del lado correcto del Kalman baseline
+      9. Entropy < percentil 70 propio
     """
-    if len(df) < 10:
+    LOOKBACK = 100  # Velas para estadisticas propias del par (25h en 15m)
+
+    if len(df) < LOOKBACK:
         return False
 
     curr = df.iloc[-2]
-    close_p = curr['close']
-    atr = curr['atr']
-    kf_price = curr['kf_price']
-    kf_price = curr['kf_price']
-    kf_slope = curr['kf_slope']
-    entropy = curr['entropy']
+    hist = df.iloc[-LOOKBACK:-1]
 
-    if atr <= 0:
+    close_p   = float(curr['close'])
+    open_p    = float(curr['open'])
+    high_p    = float(curr['high'])
+    low_p     = float(curr['low'])
+    atr       = float(curr['atr'])
+    kf_price  = float(curr['kf_price'])
+    kf_slope  = float(curr['kf_slope'])
+    entropy   = float(curr['entropy'])
+    rsi       = float(curr['rsi'])
+    adx       = float(curr['adx'])
+    volume    = float(curr['volume'])
+    macd      = float(curr['macd'])
+    macd_sig  = float(curr['macd_signal'])
+    macd_hist = macd - macd_sig
+
+    if atr <= 0 or close_p <= 0:
         return False
 
-    if direction == 'LONG':
-        # 1. Price Action: Close > Open (Green Candle)
-        if close_p <= curr['open']:
-            return False
-            
-        # 2. RSI Check: Relaxed for explosive starts
-        if curr['rsi'] > 85 or curr['rsi'] < 20:
-            return False
-            
-        # 3. KALMAN TREND CHECK (Relaxed)
-        # We only care that price is explosive (above baseline). 
-        # We DO NOT wait for the slow kf_slope to turn positive yet.
-        if close_p < kf_price:
+    # -- 1. ADX PERCENTIL PROPIO ---------------------------------------------
+    # Tendencia fuerte = ADX > percentil 55 de su propia historia reciente.
+    adx_hist = hist['adx'].replace(0, np.nan).dropna()
+    if len(adx_hist) < 20:
+        return False
+    if adx <= float(adx_hist.quantile(0.55)):
+        return False
+
+    # -- 2. VOLUMEN Z-SCORE --------------------------------------------------
+    # Conviccion real: volumen al menos 0.6 sigma sobre su propia media.
+    vol_hist = hist['volume'].replace(0, np.nan).dropna()
+    if len(vol_hist) >= 20:
+        vol_mean = float(vol_hist.mean())
+        vol_std  = float(vol_hist.std())
+        if vol_std > 0 and (volume - vol_mean) / vol_std < 0.6:
             return False
 
-        # 4. ENTROPY FILTER (Chaos Check)
-        # 0.95 allows hyper-volatile Point 0 explosive action.
-        if entropy > 0.95:
-            return False
-            
-        # 5. Extension check (don't buy if completely unhinged > 4.5 ATRs away)
-        if kf_price > 0 and (close_p - kf_price) / atr > 4.5:
-            return False
-            
-        return True
+    # -- 3. FUERZA RELATIVA DE LA VELA ---------------------------------------
+    candle_range = high_p - low_p
+    if candle_range > 0:
+        body_pct      = abs(close_p - open_p) / candle_range
+        hist_ranges   = (hist['high'] - hist['low']).replace(0, np.nan)
+        hist_bodies   = (hist['close'] - hist['open']).abs()
+        hist_body_pct = (hist_bodies / hist_ranges).dropna()
+        if len(hist_body_pct) >= 20:
+            if body_pct < float(hist_body_pct.quantile(0.40)):
+                return False
 
-    elif direction == 'SHORT':
-        # 1. Price Action: Close < Open (Red Candle)
-        if close_p >= curr['open']:
+        close_pos = (close_p - low_p) / candle_range
+        if direction == 'LONG'  and close_pos < 0.55:
             return False
-            
-        # 2. RSI Check: Relaxed for explosive dumps
-        if curr['rsi'] < 15 or curr['rsi'] > 80:
-            return False
-            
-        # 3. KALMAN TREND CHECK (Relaxed)
-        # Price below Kalman baseline is enough for early spark.
-        if close_p > kf_price:
+        if direction == 'SHORT' and close_pos > 0.45:
             return False
 
-        # 4. ENTROPY FILTER
-        if entropy > 0.95:
+    # -- 4. KF SLOPE NORMALIZADO ---------------------------------------------
+    slope_hist = hist['kf_slope'].abs().replace(0, np.nan).dropna()
+    if len(slope_hist) >= 20:
+        slope_p55 = float(slope_hist.quantile(0.55))
+        if direction == 'LONG'  and kf_slope < slope_p55:
             return False
-            
-        # 5. Extension check (wider limit)
-        if kf_price > 0 and (kf_price - close_p) / atr > 4.5:
+        if direction == 'SHORT' and kf_slope > -slope_p55:
             return False
-            
-        return True
 
-    return False
+    # -- 5. RSI MOMENTUM ZONE DINAMICA ---------------------------------------
+    rsi_hist = hist['rsi'].replace(0, np.nan).dropna()
+    if len(rsi_hist) >= 20:
+        rsi_min   = float(rsi_hist.quantile(0.20))
+        rsi_max   = float(rsi_hist.quantile(0.80))
+        rsi_range = rsi_max - rsi_min
+        if rsi_range > 5:
+            if direction == 'LONG'  and rsi < rsi_min + rsi_range * 0.45:
+                return False
+            if direction == 'SHORT' and rsi > rsi_min + rsi_range * 0.55:
+                return False
+
+    # -- 6. MACD DIRECCION ---------------------------------------------------
+    if direction == 'LONG'  and macd_hist <= 0:
+        return False
+    if direction == 'SHORT' and macd_hist >= 0:
+        return False
+
+    # -- 7. EXTENSION PERCENTIL PROPIO ---------------------------------------
+    if kf_price > 0 and atr > 0:
+        curr_ext    = abs(close_p - kf_price) / atr
+        ext_history = ((hist['close'] - hist['kf_price']).abs() /
+                       hist['atr'].replace(0, np.nan)).dropna()
+        if len(ext_history) >= 20:
+            if curr_ext > float(ext_history.quantile(0.80)):
+                return False
+
+    # -- 8. DIRECCION vs KALMAN ----------------------------------------------
+    if direction == 'LONG'  and close_p < kf_price:
+        return False
+    if direction == 'SHORT' and close_p > kf_price:
+        return False
+
+    # -- 9. ENTROPY ADAPTATIVA -----------------------------------------------
+    entropy_hist = hist['entropy'].replace(0, np.nan).dropna()
+    if len(entropy_hist) >= 20:
+        if entropy > float(entropy_hist.quantile(0.70)):
+            return False
+
+    return True
 
 
 # ================================================================
@@ -391,7 +447,7 @@ class PositionManager:
         
         # Kp=0.4 modified to be a bit gentler:
         # Don't strangle massive pumps (was Output=-0.8 limit). Limit to -0.3.
-        pid = PIDController(Kp=0.2, Ki=0.0, Kd=0.1, setpoint=0, output_limits=(-0.3, 0.5))
+        pid = PIDController(Kp=0.15, Ki=0.0, Kd=0.03, setpoint=0, output_limits=(-1.0, 0.5))
         
         self.positions[symbol] = {
             'symbol': symbol,
@@ -491,9 +547,11 @@ class PositionManager:
                 closed.append(self._close_position(symbol, exit_price, reason, candle_idx))
                 continue
 
-            # 2. BREAKEVEN LOCK (Delayed slightly for nascent volatility)
+            # 2. BREAKEVEN LOCK — activar más rápido: 1.5 ATR en lugar de 2.0
+            # Antes: pnl_atr >= 2.0 → muchos trades llegaban a +1.8 ATR y volvian al SL
+            # Ahora: a +1.5 ya se bloquea el BE, convirtiendo más trades en 'gratis'
             hold_candles = candle_idx - pos['entry_idx']
-            if not pos['be_locked'] and pnl_atr >= 2.0:
+            if not pos['be_locked'] and pnl_atr >= 1.5:
                 buffer = pos['avg_price'] * 0.002
                 if pos['direction'] == 'LONG':
                     pos['sl'] = pos['avg_price'] + buffer
@@ -516,8 +574,8 @@ class PositionManager:
                 # Base is user config
                 current_trail_atr = TRAIL_DISTANCE_ATR + pid_adjust
                 
-                # Hard Limits for sanity (Give it minimum 1.5 ATR room to breathe during profit swings)
-                current_trail_atr = max(1.5, min(4.0, current_trail_atr))
+                # Clamp: mín 1.2 ATR (permite apretarse en profits grandes) / máx 4.0 ATR
+                current_trail_atr = max(1.2, min(4.0, current_trail_atr))
 
                 if pos['direction'] == 'LONG':
                     trail_sl = pos['best_price'] - (atr_val * current_trail_atr)
@@ -535,31 +593,43 @@ class PositionManager:
         return closed
 
     def check_scale_opportunity(self, symbol, current_price, atr_val):
-        """Check if we should add to an existing position."""
+        """
+        MOMENTUM SCALING — escalar cuando la posición YA ESTÁ EN PROFIT.
+
+        Lógica anterior (pullback adverso): escalaba cuando precio bajaba -1.5 ATR
+        del primer entry. Problema: si el trade es perdedor, tienes 3x de capital en
+        una posición en contra → stops de -$30 en lugar de -$10.
+
+        Nueva lógica: escalar SOLO cuando el precio se mueve A FAVOR >= 1.5 ATR
+        del primer entry. Esto garantiza que la posición escalada ya está en profit
+        antes de añadir más tamaño.
+        """
         if symbol not in self.positions:
             return False, 0
 
         pos = self.positions[symbol]
         if pos['scale_level'] >= MAX_SCALE:
             return False, 0
-        if pos['be_locked']:
-            return False, 0  # Already in profit, don't add
-            
+        if not pos['be_locked']:
+            return False, 0  # SOLO escalar después de que el BE esté bloqueado
+
         if atr_val <= 0 or np.isnan(atr_val):
             return False, 0
 
-        ref_price = pos['entry_price']  # First entry price
+        ref_price = pos['entry_price']
 
+        # Calcular cuántos ATR se ha movido A FAVOR
         if pos['direction'] == 'LONG':
-            # Price dropped from first entry — good to add
-            adverse_atr = (ref_price - current_price) / atr_val
+            favor_atr = (current_price - ref_price) / atr_val
         else:
-            adverse_atr = (current_price - ref_price) / atr_val
+            favor_atr = (ref_price - current_price) / atr_val
 
-        if pos['scale_level'] == 1 and adverse_atr >= SCALE_LEVEL_2:
+        # Escalar 2ª entrada cuando el precio ya está 1.5 ATR a favor
+        if pos['scale_level'] == 1 and favor_atr >= 1.5:
             return True, 2
 
-        if pos['scale_level'] == 2 and adverse_atr >= SCALE_LEVEL_3:
+        # Escalar 3ª entrada cuando el precio está 3.0 ATR a favor
+        if pos['scale_level'] == 2 and favor_atr >= 3.0:
             return True, 3
 
         return False, 0
