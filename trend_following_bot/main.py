@@ -301,28 +301,28 @@ class TrendBot:
                 logger.error(f"Whale Scan Error: {we}")
                 whale_picks = []
 
-            # Con trail 4 ATR solo entran al watchlist activo HIGH + ULTRA.
-            whale_picks_high_ultra = [
+            # MEDIUM, HIGH y ULTRA ejecutan trades. Solo LOW y NONE se descartan.
+            whale_picks_executable = [
                 p for p in whale_picks
-                if p.get('confidence') in ('HIGH', 'ULTRA')
+                if p.get('confidence') in ('MEDIUM', 'HIGH', 'ULTRA')
             ]
             whale_picks_low = [
                 p for p in whale_picks
-                if p.get('confidence') not in ('HIGH', 'ULTRA')
+                if p.get('confidence') not in ('MEDIUM', 'HIGH', 'ULTRA')
             ]
             logger.info(
                 f"🐋 Whale picks totales: {len(whale_picks)} | "
-                f"HIGH+ULTRA (ejecutan): {len(whale_picks_high_ultra)} | "
-                f"LOW/MEDIUM (descartados): {len(whale_picks_low)}"
+                f"MEDIUM+HIGH+ULTRA (ejecutan): {len(whale_picks_executable)} | "
+                f"LOW/NONE (descartados): {len(whale_picks_low)}"
             )
-            # Watcher monitorea todos pero solo HIGH+ULTRA entran al watchlist
-            self.whale_watchlist = whale_picks_high_ultra
-            self.whale_watcher.update_pairs(whale_picks_high_ultra)
+            # Watcher monitorea todos pero solo MEDIUM+ entran al watchlist
+            self.whale_watchlist = whale_picks_executable
+            self.whale_watcher.update_pairs(whale_picks_executable)
 
-            # Merge: anomaly + whale HIGH/ULTRA (sin duplicados, separados por layer)
+            # Merge: anomaly + whale MEDIUM/HIGH/ULTRA (sin duplicados, separados por layer)
             existing_syms = {p['symbol'] for p in self.daily_watchlist}
             added_whale = 0
-            for wp in whale_picks_high_ultra:
+            for wp in whale_picks_executable:
                 if wp['symbol'] not in existing_syms:
                     self.daily_watchlist.append(wp)
                     existing_syms.add(wp['symbol'])

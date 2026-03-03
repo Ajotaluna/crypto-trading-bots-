@@ -29,11 +29,11 @@ MIN_HISTORY         = 96   # Mínimo de velas para calcular métricas (~24h en 1
 TREND_MOVE_PCT      = 0.8  # % de movimiento mínimo por vela para contar como "tendencia activa"
 
 # Categorías de señal (alineadas con whale scanner)
-# ULTRA ≥ 80 pts : kick fuerte + rvol + barrier → señal de alta calidad
-# HIGH  ≥ 40 pts : kick moderado + algo de rvol  → señal sólida
-# por debajo de HIGH: descartado, no entra al watchlist
-ANOMALY_SCORE_ULTRA = 80
-ANOMALY_SCORE_HIGH  = 40
+# ULTRA ≥ 70 pts : kick fuerte + rvol + barrier + trend reciente
+# HIGH  ≥ 20 pts : algún kick + algo de rvol → señal mínima ejecutable
+# por debajo de HIGH: descartado
+ANOMALY_SCORE_ULTRA = 70
+ANOMALY_SCORE_HIGH  = 20
 
 
 
