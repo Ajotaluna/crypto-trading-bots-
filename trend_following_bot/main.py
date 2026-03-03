@@ -110,12 +110,37 @@ class TrendBot:
         
         # 1. Initialize Balance
         if not self.market.is_dry_run:
-             status = await self.market.get_real_account_status()
-             if status:
-                 self.start_balance = status['equity']
-                 logger.info(f"Initial Equity: ${self.start_balance:.2f}")
+            # Produccion: obtener balance real con reintentos
+            logger.info("🔑 PRODUCCION: Conectando con Binance API para obtener balance...")
+            status = None
+            for attempt in range(1, 4):  # 3 reintentos
+                try:
+                    status = await self.market.get_real_account_status()
+                    if status:
+                        self.start_balance = status['equity']
+                        self.market.balance = status['balance']  # sincronizar para fallbacks
+                        logger.info(
+                            f"✅ Balance cargado (intento {attempt}/3): "
+                            f"Equity=${self.start_balance:.2f} | "
+                            f"Wallet=${status['balance']:.2f} | "
+                            f"PnL no realizado=${status['unrealized_pnl']:.2f}"
+                        )
+                        break
+                    else:
+                        logger.warning(f"⚠️ Intento {attempt}/3: get_real_account_status() retorno None — reintentando en 3s...")
+                        await asyncio.sleep(3)
+                except Exception as e:
+                    logger.error(f"❌ Intento {attempt}/3 fallo: {e} — reintentando en 3s...")
+                    await asyncio.sleep(3)
+
+            if not status:
+                logger.error(
+                    "❌ No se pudo obtener el balance real tras 3 intentos. "
+                    "Verifica: API_KEY, API_SECRET, conectividad, y que la IP no este baneada."
+                )
         else:
-             self.start_balance = self.market.balance
+            self.start_balance = self.market.balance
+
         
         self.current_day_str = datetime.utcnow().strftime('%Y-%m-%d')
              
@@ -321,20 +346,19 @@ class TrendBot:
                 whale_picks = []
 
             # MEDIUM, HIGH y ULTRA ejecutan trades. Solo LOW y NONE se descartan.
+            # NEUTRAL = sin direccion clara, no se puede tradear — se descarta tambien.
             whale_picks_executable = [
                 p for p in whale_picks
                 if p.get('confidence') in ('MEDIUM', 'HIGH', 'ULTRA')
+                and p.get('direction') in ('LONG', 'SHORT')  # bloquear NEUTRAL
             ]
-            whale_picks_low = [
-                p for p in whale_picks
-                if p.get('confidence') not in ('MEDIUM', 'HIGH', 'ULTRA')
-            ]
+            whale_picks_discarded = len(whale_picks) - len(whale_picks_executable)
             logger.info(
                 f"🐋 Whale picks totales: {len(whale_picks)} | "
-                f"MEDIUM+HIGH+ULTRA (ejecutan): {len(whale_picks_executable)} | "
-                f"LOW/NONE (descartados): {len(whale_picks_low)}"
+                f"ejecutables (MEDIUM+, no NEUTRAL): {len(whale_picks_executable)} | "
+                f"descartados: {whale_picks_discarded}"
             )
-            # Watcher monitorea todos pero solo MEDIUM+ entran al watchlist
+            # Watcher monitorea todos pero solo MEDIUM+ con direccion entran al watchlist
             self.whale_watchlist = whale_picks_executable
             self.whale_watcher.update_pairs(whale_picks_executable)
 
@@ -574,8 +598,9 @@ class TrendBot:
             limit = 200
             df = await self.market.get_klines(symbol, interval='15m', limit=limit)
 
-            if df.empty:
-                logger.warning(f"📭 {symbol}: No klines data available")
+            if df is None or df.empty:
+                logger.warning(f"📭 {symbol}: Sin datos — eliminado del watchlist hasta el próximo macro scan")
+                self.daily_watchlist = [p for p in self.daily_watchlist if p['symbol'] != symbol]
                 return
 
             df_indicators = await asyncio.to_thread(
@@ -932,7 +957,7 @@ class TrendBot:
                  pnl_pct = ((total_equity - self.start_balance) / self.start_balance * 100) if self.start_balance > 0 else 0
                  
                  logger.info(f"{'='*60}")
-                 logger.info(f"📊 STATUS | Equity: ${total_equity:.2f} | Daily PnL: {pnl_pct:+.2f}% | Open: {open_count}/{MAX_SIGNALS} | Watchlist: {wl_count}")
+                 logger.info(f"📊 STATUS | Equity: ${total_equity:.2f} | Daily PnL: {pnl_pct:+.2f}% | Open: {open_count}/{ANOMALY_SLOTS + WHALE_SLOTS} | Watchlist: {wl_count}")
                  
                  if open_count > 0:
                      for s, p in self.market.positions.items():
