@@ -162,16 +162,14 @@ class AnomalyScanner:
                 long_age  = _trend_age_candles(close, 'LONG')
                 short_age = _trend_age_candles(close, 'SHORT')
 
-                # ── BOOT MODE: rechazar cualquier tendencia activa > 4h ───
+                # ── BOOT MODE: aceptar tendencias muy recientes (≤ 2 velas = 30 min) ──
                 if boot_mode:
-                    long_in_trend  = long_age  >  0  # En boot: tendencia de 1+ velas = fuera
-                    short_in_trend = short_age >  0
-                    # Si hay tendencia en cualquier dirección → el par ya está en movimiento
-                    if long_in_trend or short_in_trend:
-                        continue
-                    # Además requiere compresión real para estar en watchlist en boot
-                    if not _is_in_compression(close, high, low):
-                        continue
+                    # En boot: la tendencia no puede tener más de 2 velas de historia
+                    # Si ambas son demasiado viejas → el par ya lleva demasiado tiempo moviéndose
+                    long_too_old  = long_age  > 2
+                    short_too_old = short_age > 2
+                    if long_too_old and short_too_old:
+                        continue   # Par ya en movimiento fuerte, saltar
 
                 # ── CONTINUOUS MODE: solo tendencias recién nacidas ────────
                 else:

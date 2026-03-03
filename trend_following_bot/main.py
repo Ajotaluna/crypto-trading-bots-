@@ -319,17 +319,26 @@ class TrendBot:
             self.whale_watchlist = whale_picks_executable
             self.whale_watcher.update_pairs(whale_picks_executable)
 
-            # Merge: anomaly + whale MEDIUM/HIGH/ULTRA (sin duplicados, separados por layer)
-            existing_syms = {p['symbol'] for p in self.daily_watchlist}
-            added_whale = 0
+            # ── WATCHLIST FINAL: slots garantizados por scanner ──────────────
+            # Cada scanner tiene su propia sección - NO compiten por espacio.
+            # Anomaly: hasta 10 picks  |  Whale: hasta 15 picks
+            # Total posible: 25 en watchlist, máx 6 posiciones abiertas.
+            watchlist_anomaly = anomaly_picks[:10]   # ya tienen layer='ANOMALY'
+            watchlist_whale   = []
+            anomaly_syms = {p['symbol'] for p in watchlist_anomaly}
             for wp in whale_picks_executable:
-                if wp['symbol'] not in existing_syms:
-                    self.daily_watchlist.append(wp)
-                    existing_syms.add(wp['symbol'])
-                    added_whale += 1
+                if wp['symbol'] not in anomaly_syms:  # evitar duplicado si el mismo par salió en ambos
+                    watchlist_whale.append(wp)
+                if len(watchlist_whale) >= 15:
+                    break
 
-            # Re-ordenar por score descendente (priorizamos los más fuertes)
+            # Construir watchlist final: anomaly primero, luego whale
+            self.daily_watchlist = watchlist_anomaly + watchlist_whale
             self.daily_watchlist.sort(key=lambda x: x['score'], reverse=True)
+
+            added_anomaly = len(watchlist_anomaly)
+            added_whale   = len(watchlist_whale)
+
 
             # --- 📡 ORDERBOOK STREAMER: SUSCRIBIR AL TOP WATCHLIST + ACTIVAS ---
             top_symbols = [p['symbol'] for p in self.daily_watchlist]
@@ -343,13 +352,14 @@ class TrendBot:
 
             logger.info(
                 f"✅ WATCHLIST FINAL: {len(self.daily_watchlist)} pares "
-                f"(anomaly={len(self.daily_watchlist)-added_whale} | whale={added_whale})"
+                f"| 🔭 ANOMALY: {added_anomaly} | 🐋 WHALE: {added_whale}"
             )
             for p in self.daily_watchlist:
                 layer = p.get('layer', 'ANOMALY')
                 conf  = p.get('confidence', '?')
                 logger.info(f"  [{layer:7s}][{conf:5s}] {p['symbol']:12s} ({p['direction']:5s}) | "
                             f"Score: {p['score']:3d} | {p.get('reasons','')[:70]}")
+
 
         except Exception as e:
             logger.error(f"Macro Scan Error: {e}")
