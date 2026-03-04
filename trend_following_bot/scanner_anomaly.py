@@ -173,11 +173,29 @@ class AnomalyScanner:
 
                 # ── CONTINUOUS MODE: solo tendencias recién nacidas ────────
                 else:
-                    long_too_old  = long_age  > max_age or long_age  == 0
-                    short_too_old = short_age > max_age or short_age == 0
-                    # Ambas demasiado viejas/inexistentes → par sin movimiento nuevo
-                    if long_too_old and short_too_old:
+                    # LIVE: aceptar tendencias recién nacidas (1 ≤ age ≤ max_age)
+                    # O pares planos (age=0) que estén en compresión o cerca de romper
+                    long_nascent  = 0 < long_age  <= max_age
+                    short_nascent = 0 < short_age <= max_age
+                    long_coiled   = long_age  == 0  # plano: sin direccion confirmada aun
+                    short_coiled  = short_age == 0
+
+                    # Checar si hay señales previas de ruptura (rvol o kick) — SOLO para age=0
+                    _vol_now  = pd.to_numeric(history['volume'], errors='coerce')
+                    _vol_last = _vol_now.iloc[-4:].sum()
+                    _avg_vol  = _vol_now.iloc[-96:].sum() / 24 if len(_vol_now) >= 96 else None
+                    _rvol_pre = (_vol_last / _avg_vol) if (_avg_vol and _avg_vol > 0) else 0
+
+                    # Par en compresión a punto de romper
+                    _in_comp = _is_in_compression(close, high, low)
+
+                    # Aceptar si: tiene tendencia naciente O está plano pero con rvol ≥ 1.5x
+                    has_nascent = long_nascent or short_nascent
+                    has_coiled  = (long_coiled and short_coiled) and (_rvol_pre >= 1.5 or _in_comp)
+
+                    if not has_nascent and not has_coiled:
                         continue
+
 
                 # ── MÉTRICAS COMUNES ──────────────────────────────────────
 
