@@ -31,8 +31,8 @@ MIN_VOL_USDT_M   = 5.0    # Volumen mínimo 24h en millones USDT
 MIN_SCORE        = 130    # Score mínimo: señales sólidas (HIGH+ en nuevo rango)
 KLINES_LIMIT     = 200    # Velas a descargar por par
 KLINES_INTERVAL  = '15m'  # Intervalo de las velas
-CONCURRENCY      = 8      # Descargas paralelas dentro de cada batch
-INTER_BATCH_WAIT = 0.3    # Segundos de pausa entre batches (evitar rate limit)
+CONCURRENCY      = 3      # Descargas paralelas (bajado de 8 a 3 para no banear la IP)
+INTER_BATCH_WAIT = 1.5    # Segundos de pausa entre batches (subido de 0.3 a 1.5)
 
 # Context fetch timeout (evitar que un endpoint lento bloquee el scan)
 CONTEXT_TIMEOUT  = 4.0    # segundos

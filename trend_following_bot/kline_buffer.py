@@ -116,21 +116,26 @@ class KlineBuffer:
     async def subscribe(self, symbols: List[str]):
         """
         Suscribe nuevos símbolos. Carga el historial REST y los encola
-        para el WebSocket.
+        para el WebSocket. Usa Semaphore(3) para no saturar el API.
         """
         new_syms = [s for s in symbols if s not in self._symbols]
         if not new_syms:
             return
 
-        # Cargar historial REST para los nuevos (con throttling)
-        for i, sym in enumerate(new_syms):
-            await self._load_history(sym)
-            if i % 20 == 19:          # pausa cada 20 llamadas REST
-                await asyncio.sleep(1)
+        sem = asyncio.Semaphore(3)  # Máx 3 requests REST simultáneos para historial
+
+        async def _load_throttled(sym: str, idx: int):
+            async with sem:
+                await self._load_history(sym)
+            if idx > 0 and idx % 10 == 0:
+                await asyncio.sleep(0.8)  # Pausa cada 10 pares cargados
+
+        await asyncio.gather(*[_load_throttled(s, i) for i, s in enumerate(new_syms)])
 
         self._pending_add.update(new_syms)
         self._symbols.update(new_syms)
         logger.info(f"📦 KlineBuffer: {len(new_syms)} símbolos nuevos suscritos (total={len(self._symbols)})")
+
 
     def get_df(self, symbol: str) -> Optional[pd.DataFrame]:
         """
