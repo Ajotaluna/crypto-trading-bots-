@@ -23,6 +23,7 @@ from whale_market_scanner import scan_whale_universe
 from whale_watcher import WhaleWatcher
 from orderbook_streamer import OrderbookStreamer
 from market_regime import get_live_regime, REGIME_RANGING, REGIME_CONFIG
+from kline_buffer import KlineBuffer, MiniTickerStream
 from trading_strategy import (
     confirm_entry, 
     calculate_indicators, 
@@ -92,7 +93,11 @@ class TrendBot:
         self.pos_state = {}  # Local state tracker
         # Tracking de layer por posicion abierta: {symbol: 'ANOMALY'|'WHALE'}
         self.pos_layer: dict = {}
-        
+
+        # WebSocket data layer (reemplaza REST de klines y ticker/24hr)
+        self.kline_buf   = KlineBuffer(interval='15m')
+        self.mini_ticker = MiniTickerStream(min_vol_usdt_m=50.0)
+
         # SCOREBOARD
         self.tracker = WinRateTracker()
         self.tracker.log_summary()
@@ -152,6 +157,13 @@ class TrendBot:
         asyncio.create_task(self.ob_streamer.run_stream())
         asyncio.create_task(self.reporting_loop())
         asyncio.create_task(self.safety_loop())
+
+        # WebSocket data layer (arrancar antes del primer macro scan)
+        asyncio.create_task(self.kline_buf.start())
+        asyncio.create_task(self.mini_ticker.start())
+        logger.info("⏳ Esperando datos iniciales del MiniTickerStream (max 30s)...")
+        await self.mini_ticker.wait_ready(timeout=30)
+
         asyncio.create_task(
             self.whale_watcher.start(self.whale_watchlist, self.market)
         )
@@ -277,39 +289,33 @@ class TrendBot:
             )
             logger.info(f"   Slots: {max_slots} | LongBias: {long_bias}x | ShortBias: {short_bias}x | Size: {size_mult}x")
 
-            # ─── ANOMALY SCAN: buscar nacientes (usa klines del mercado) ─
+            # ─── ANOMALY SCAN: buscar nacientes ──────────────────────────────
             try:
-                # Obtener klines de los pares del universo para el scanner
-                universe = await self.market.get_trading_universe()
+                # Universo via WebSocket MiniTicker (sin REST ticker/24hr)
+                universe = self.mini_ticker.get_universe()
                 if not universe:
-                    logger.warning("Anomaly Scan: get_trading_universe() retorno None o vacio — saltando")
-                    anomaly_picks = []
-                else:
-                    universe = universe[:100]  # Analizar top-100 por volumen como muestra
-                    pair_data = {}
-                    sem = asyncio.Semaphore(5)  # Max 5 requests paralelos (bajo para evitar 418)
-                    BATCH_SIZE      = 20        # Pares por batch
-                    BATCH_WAIT_SEC  = 0.5       # Pausa entre batches para no saturar el API
+                    # Fallback a REST solo si el MiniTickerStream no tiene datos aún
+                    universe = await self.market.get_trading_universe() or []
+                    logger.warning(f"Anomaly Scan: MiniTicker sin datos — fallback REST ({len(universe)} pares)")
 
-                    async def _fetch_klines(sym):
-                        try:
-                            async with sem:
-                                df = await self.market.get_klines(sym, interval='15m', limit=200)
-                                if df is not None and not df.empty and len(df) >= 96:
-                                    pair_data[sym] = df
-                        except Exception:
-                            pass  # Error en un par individual no cancela el resto
+                universe = universe[:100]
 
-                    # Fetch en batches con pausa entre grupos (igual que whale scanner)
-                    for batch_start in range(0, len(universe), BATCH_SIZE):
-                        batch = universe[batch_start:batch_start + BATCH_SIZE]
-                        await asyncio.gather(*[_fetch_klines(s) for s in batch])
-                        if batch_start + BATCH_SIZE < len(universe):
-                            await asyncio.sleep(BATCH_WAIT_SEC)  # Pausa anti-ban
+                # Asegurar que el KlineBuffer esté suscrito a todos estos pares
+                asyncio.create_task(self.kline_buf.subscribe(universe))
 
-                    logger.info(f"📡 Anomaly Scan: {len(pair_data)}/{len(universe)} pares con datos listos")
+                # Leer datos del buffer WebSocket (sin llamadas REST)
+                pair_data = {}
+                for sym in universe:
+                    df = self.kline_buf.get_df(sym)
+                    if df is not None and len(df) >= 96:
+                        pair_data[sym] = df
 
+                logger.info(
+                    f"📡 Anomaly Scan: {len(pair_data)}/{len(universe)} pares en buffer WS "
+                    f"({'boot' if boot else 'live'} mode)"
+                )
 
+                if pair_data:
                     anomaly_picks = await asyncio.to_thread(
                         self.scanner.score_universe,
                         pair_data,
@@ -318,12 +324,16 @@ class TrendBot:
                         None,  # long_ratio
                         boot,  # boot_mode
                     )
-                    # Asignar confidence si no viene del scorer (modo boot)
                     for p in anomaly_picks:
                         p.setdefault('confidence', 'HIGH')
-                    logger.info(f"📡 Anomaly picks: {len(anomaly_picks)} ({'boot' if boot else 'live'} mode)")
+                    logger.info(f"📡 Anomaly picks: {len(anomaly_picks)}")
                     for p in anomaly_picks[:5]:
                         logger.info(f"  [ANOMALY] {p['symbol']:12s} ({p['direction']:5s}) score={p['score']} conf={p.get('confidence','?')} | {p.get('reasons','')[:60]}")
+                else:
+                    logger.warning("📡 Anomaly Scan: buffer vacío — esperando que KlineBuffer llene el historial")
+                    anomaly_picks = []
+
+
             except Exception as ae:
                 logger.error(f"Anomaly Scan Error: {ae}", exc_info=True)
                 anomaly_picks = []
@@ -602,12 +612,17 @@ class TrendBot:
                 logger.debug(f"⛔ Posiciones totales al máx ({total_open}): {symbol} ignorado")
                 return
             limit = 200
-            df = await self.market.get_klines(symbol, interval='15m', limit=limit)
+            # Primero intentar buffer WebSocket (sin REST)
+            df = self.kline_buf.get_df(symbol)
+            if df is None or df.empty or len(df) < 50:
+                # Fallback REST solo si el buffer no tiene datos
+                df = await self.market.get_klines(symbol, interval='15m', limit=limit)
 
             if df is None or df.empty:
                 logger.warning(f"📭 {symbol}: Sin datos — eliminado del watchlist hasta el próximo macro scan")
                 self.daily_watchlist = [p for p in self.daily_watchlist if p['symbol'] != symbol]
                 return
+
 
             df_indicators = await asyncio.to_thread(
                 calculate_indicators,
