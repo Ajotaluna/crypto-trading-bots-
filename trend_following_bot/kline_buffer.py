@@ -96,6 +96,7 @@ class KlineBuffer:
         self._pending_remove: set = set()  # backlog para remover
         self._ready:     asyncio.Event = asyncio.Event()  # señal de que WS está vivo
         self._running    = False
+        self._ip_banned  = False  # True si recibimos 418 en la carga inicial
 
     # ── API pública ────────────────────────────────────────────────────────────
 
@@ -115,26 +116,40 @@ class KlineBuffer:
 
     async def subscribe(self, symbols: List[str]):
         """
-        Suscribe nuevos símbolos. Carga el historial REST y los encola
-        para el WebSocket. Usa Semaphore(3) para no saturar el API.
+        Suscribe nuevos símbolos. Carga el historial REST (una sola vez) y
+        los suscribe al WebSocket. Si la IP está baneada (418), abandona el
+        REST y confía en que el WebSocket llene el buffer gradualmente.
         """
         new_syms = [s for s in symbols if s not in self._symbols]
         if not new_syms:
             return
 
-        sem = asyncio.Semaphore(3)  # Máx 3 requests REST simultáneos para historial
+        self._ip_banned = False  # reset por si acaso
+        sem = asyncio.Semaphore(3)  # Máx 3 requests REST simultáneos
 
         async def _load_throttled(sym: str, idx: int):
+            if self._ip_banned:
+                return  # Abortar si ya detectamos el ban
             async with sem:
+                if self._ip_banned:
+                    return
                 await self._load_history(sym)
             if idx > 0 and idx % 10 == 0:
-                await asyncio.sleep(0.8)  # Pausa cada 10 pares cargados
+                await asyncio.sleep(0.8)
 
         await asyncio.gather(*[_load_throttled(s, i) for i, s in enumerate(new_syms)])
 
+        loaded = sum(1 for s in new_syms if s in self._buffers)
         self._pending_add.update(new_syms)
         self._symbols.update(new_syms)
-        logger.info(f"📦 KlineBuffer: {len(new_syms)} símbolos nuevos suscritos (total={len(self._symbols)})")
+        if self._ip_banned:
+            logger.warning(
+                f"⚠️ KlineBuffer: IP baneada durante carga REST — "
+                f"{loaded}/{len(new_syms)} pares con historial. "
+                f"El buffer se llenara con WebSocket gradualmente."
+            )
+        else:
+            logger.info(f"📦 KlineBuffer: {len(new_syms)} símbolos nuevos suscritos (total={len(self._symbols)})")
 
 
     def get_df(self, symbol: str) -> Optional[pd.DataFrame]:
@@ -159,7 +174,8 @@ class KlineBuffer:
         try:
             async with self._session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status == 418:
-                    logger.warning(f"⚠️ 418 cargando historial {symbol} — saltando")
+                    logger.warning(f"⚠️ 418 cargando historial {symbol} — IP baneada, abortando carga REST")
+                    self._ip_banned = True
                     return
                 if resp.status == 200:
                     data = await resp.json()

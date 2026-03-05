@@ -338,23 +338,20 @@ class TrendBot:
                 logger.error(f"Anomaly Scan Error: {ae}", exc_info=True)
                 anomaly_picks = []
 
-            # Marcar que el primer scan ya ocurrió
-            if self.is_first_scan:
-                self.is_first_scan = False
-
             # Añadir anomaly picks al watchlist primero
             self.daily_watchlist = list(anomaly_picks)
 
-            # ─── PAUSA ANTI-BAN: 3 min entre scans ───────────────────────────
-            # Anomaly scan ya no usa REST (KlineBuffer), pero whale scan sí hace
-            # ~2000 requests (5 endpoints × 400 pares). Con 180s de separación
-            # el rate limit de Binance se restablece completamente.
+            # ─── PAUSA ANTI-BAN: 3 min en primer arranque, 1 min en ciclos ─────
             if self.is_first_scan:
-                wait_s = 180  # Primera vez: 3 minutos para que KlineBuffer llene historial
+                wait_s = 180  # Primera vez: 3 minutos — deja que KlineBuffer se llene
             else:
                 wait_s = 60   # Ciclos siguientes: 1 minuto es suficiente
             logger.info(f"⏳ Pausa anti-ban {wait_s}s entre Anomaly Scan y Whale Scan...")
             await asyncio.sleep(wait_s)
+
+            # Marcar que el primer scan ya ocurrió (DESPUÉS de la pausa)
+            if self.is_first_scan:
+                self.is_first_scan = False
 
 
             # ─── WHALE SCAN: top-15 adicionales ──────────────────────
