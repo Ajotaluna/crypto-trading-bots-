@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 import aiohttp
 
 try:
@@ -46,6 +46,10 @@ class OrderbookStreamer:
         self.wall_concentration_pct = 0.35
         # Minimum distance (%) to ignore statistical noise right near the spread
         self.min_wall_dist_pct = 0.15
+
+        # OBI History: rolling buffer de las últimas 100 lecturas por símbolo
+        # Permite comparar el OBI actual contra el percentil histórico propio del par
+        self._obi_history: dict = defaultdict(lambda: deque(maxlen=100))
 
     async def _manage_subscriptions(self, websocket, subscribe_list, unsubscribe_list):
         """Sends JSON payload to Binance to turn streams on/off."""
@@ -228,7 +232,37 @@ class OrderbookStreamer:
             return 0.0
             
         # OBI: Positive means Bids > Asks (Bullish support). Negative means Asks > Bids (Bearish walls).
-        return (bid_vol_usd - ask_vol_usd) / total_vol
+        obi = (bid_vol_usd - ask_vol_usd) / total_vol
+
+        # Guardar en historial para comparación posterior
+        self._obi_history[symbol].append(obi)
+        return obi
+
+    def get_obi_percentile(self, symbol) -> dict:
+        """
+        Devuelve el OBI actual y su posición relativa en el historial del par.
+
+        Returns:
+            dict con:
+              'obi'         : valor actual
+              'percentile'  : 0-100 (qué porcentaje del historial es más bajo que el actual)
+              'history_len' : cuántas muestras hay
+              'mean'        : media del historial
+              'std'         : desviación estándar del historial
+        """
+        obi    = self.get_orderbook_imbalance(symbol)
+        hist   = list(self._obi_history[symbol])
+        n      = len(hist)
+
+        if n < 10:
+            # Sin suficiente historial: devolver OBI crudo sin percentil
+            return {'obi': obi, 'percentile': 50.0, 'history_len': n, 'mean': 0.0, 'std': 1.0}
+
+        mean   = sum(hist) / n
+        std    = (sum((x - mean) ** 2 for x in hist) / n) ** 0.5
+        pct    = sum(1 for x in hist if x <= obi) / n * 100
+
+        return {'obi': obi, 'percentile': pct, 'history_len': n, 'mean': round(mean, 4), 'std': round(std, 4)}
 
     def get_nearest_wall(self, symbol, direction='LONG'):
         """

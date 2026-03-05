@@ -652,16 +652,65 @@ class TrendBot:
             )
             
             if is_valid:
-                # --- ORDERBOOK OBI & WALL FILTER ---
-                obi = self.ob_streamer.get_orderbook_imbalance(symbol)
-                if (direction == 'LONG' and obi < -0.3) or (direction == 'SHORT' and obi > 0.3):
-                    logger.warning(f"🛡️ MICRO AVOIDANCE {symbol} ({direction}): Rechazo OBI {obi:+.2f}")
+                # --- ORDERBOOK OBI (contextual) ---
+                obi_data = self.ob_streamer.get_obi_percentile(symbol)
+                obi      = obi_data['obi']
+                obi_pct  = obi_data['percentile']
+                obi_n    = obi_data['history_len']
+
+                # Rechazar solo si el OBI es extremo EN EL CONTEXTO DEL PAR
+                # LONG: rechaza si el OBI está en el 15% inferior del historial propio (presión vendedora excepcional)
+                # SHORT: rechaza si está en el 85% superior (presión compradora excepcional)
+                # Fallback si no hay historial suficiente: umbral fijo conservador ±0.5
+                if obi_n >= 10:
+                    obi_blocks = (direction == 'LONG' and obi_pct <= 15) or \
+                                 (direction == 'SHORT' and obi_pct >= 85)
+                else:
+                    obi_blocks = (direction == 'LONG' and obi < -0.5) or \
+                                 (direction == 'SHORT' and obi > 0.5)
+
+                if obi_blocks:
+                    logger.warning(
+                        f"🛡️ MICRO AVOIDANCE {symbol} ({direction}): OBI={obi:+.3f} "
+                        f"(percentil {obi_pct:.0f}% del historial propio | n={obi_n})"
+                    )
                     return
-                
+
+
                 wall_p, wall_dist = self.ob_streamer.get_nearest_wall(symbol, direction)
-                if wall_dist is not None and wall_dist < 0.5:
-                    logger.warning(f"🧱 MICRO AVOIDANCE {symbol} ({direction}): Muro a {wall_dist:.2f}%")
-                    return
+                if wall_dist is not None and wall_p is not None:
+                    # Movimiento predicho = ATR × 2.5 (trail target del bot), expresado en %
+                    atr_pct      = (atr_val / close_p) * 100 if close_p > 0 else 0
+                    predicted_move_pct = atr_pct * 2.5   # mismo multiplicador que TRAIL_DISTANCE_ATR
+
+                    # Tamaño del muro relativo al side del libro
+                    book          = self.ob_streamer.books.get(symbol, {})
+                    side_orders   = book.get('asks', []) if direction == 'LONG' else book.get('bids', [])
+                    total_usd     = sum(p * q for p, q in side_orders) if side_orders else 0
+                    wall_usd      = 0
+                    if side_orders and wall_p:
+                        wall_qty  = next((q for p, q in side_orders if abs(p - wall_p) < 1e-8), 0)
+                        wall_usd  = wall_p * wall_qty
+                    wall_size_pct = (wall_usd / total_usd * 100) if total_usd > 0 else 0
+
+                    # ─ Rechazar solo si el muro es significativo Y bloquea el camino ──
+                    wall_blocks_move = wall_dist < predicted_move_pct   # muro dentro del target
+                    wall_is_real     = wall_size_pct >= 15.0             # concentra ≥15% del libro
+                    wall_cuts_profit = wall_dist < predicted_move_pct * 0.5  # bloquea >50% del target
+
+                    if wall_blocks_move and wall_is_real and wall_cuts_profit:
+                        logger.warning(
+                            f"🧱 MICRO AVOIDANCE {symbol} ({direction}): "
+                            f"Muro a {wall_dist:.2f}% | Target={predicted_move_pct:.2f}% | "
+                            f"Muro representa {wall_size_pct:.1f}% del libro — bloquea >{wall_dist/predicted_move_pct*100:.0f}% del movimiento"
+                        )
+                        return
+                    elif wall_dist is not None and wall_dist < predicted_move_pct:
+                        logger.info(
+                            f"⚠️ Muro detectado {symbol}: a {wall_dist:.2f}% (target={predicted_move_pct:.2f}%) "
+                            f"pero tamaño={wall_size_pct:.1f}% del libro — no es suficiente para bloquear"
+                        )
+
 
                 logger.info(f"✨ MICRO TRIGGER: {symbol} ({direction}) Confirmed!")
                 logger.info(f"   📈 Indicators: RSI={rsi_val:.1f} | Entropy={entropy_val:.3f} | KF_slope={kf_slope:.6f} | ATR={atr_val:.4f}")
