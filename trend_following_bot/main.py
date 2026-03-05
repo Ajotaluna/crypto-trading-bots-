@@ -617,15 +617,22 @@ class TrendBot:
             limit = 200
             # Primero intentar buffer WebSocket (sin REST)
             df = self.kline_buf.get_df(symbol)
+            data_source = "WS_BUFFER"
             if df is None or df.empty or len(df) < 50:
                 # Fallback REST solo si el buffer no tiene datos
+                logger.debug(f"📊 {symbol}: buffer WS tiene {len(df) if df is not None else 0} velas — usando REST fallback")
                 df = await self.market.get_klines(symbol, interval='15m', limit=limit)
+                data_source = "REST_FALLBACK"
 
             if df is None or df.empty:
                 logger.warning(f"📭 {symbol}: Sin datos — eliminado del watchlist hasta el próximo macro scan")
                 self.daily_watchlist = [p for p in self.daily_watchlist if p['symbol'] != symbol]
                 return
 
+            n_candles = len(df)
+            if n_candles < 100:
+                logger.warning(f"⏳ {symbol}: Solo {n_candles} velas ({data_source}) — confirm_entry necesita ≥100. Buffer aún llenándose.")
+                return
 
             df_indicators = await asyncio.to_thread(
                 calculate_indicators,
@@ -640,7 +647,14 @@ class TrendBot:
             entropy_val = float(curr['entropy'])
             rsi_val = float(curr['rsi'])
             atr_val = float(curr['atr'])
+            adx_val = float(curr.get('adx', 0))
             candle_color = 'GREEN' if close_p > float(curr['open']) else 'RED'
+
+            logger.info(
+                f"🔬 {symbol} ({direction}) | {n_candles}v [{data_source}] | "
+                f"ADX={adx_val:.1f} RSI={rsi_val:.1f} Entropy={entropy_val:.3f} "
+                f"KFslope={kf_slope:+.5f} KFprice={kf_price:.4f} Close={close_p:.4f} [{candle_color}]"
+            )
             
             is_valid = await asyncio.to_thread(
                 confirm_entry,

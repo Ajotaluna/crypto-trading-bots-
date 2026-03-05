@@ -3,8 +3,12 @@ Trading Strategy Logic
 Encapsulates indicators, entry confirmation, and position management.
 Shared between backtesting and live execution.
 """
+import logging
 import pandas as pd
 import numpy as np
+
+logger = logging.getLogger("ConfirmEntry")
+
 
 # ================================================================
 # CONFIGURATION
@@ -239,24 +243,16 @@ def calculate_indicators(df):
 def confirm_entry(df, direction):
     """
     Confirma el TIMING de entrada usando FILTROS DINAMICOS POR PAR.
-
-    Cada umbral se calcula contra el historial propio del par.
-    Un ADX de 22 puede ser "tendencia fuerte" para XNYUSDT y "rango" para BTC.
-    9 filtros adaptativos:
-      1. ADX percentil 55 propio
-      2. Volumen z-score > 0.6 sobre media propia
-      3. Fuerza/posicion de vela vs percentil 40 del par
-      4. KF Slope normalizado (percentil 55 del slope abs del par)
-      5. RSI momentum zone dinamica (rango reciente del par)
-      6. MACD histograma alineado
-      7. Extension vs KF < percentil 80 del par
-      8. Precio del lado correcto del Kalman baseline
-      9. Entropy < percentil 70 propio
     """
-    LOOKBACK = 100  # Velas para estadisticas propias del par (25h en 15m)
+    LOOKBACK = 100
+
+    sym = df['symbol'].iloc[-1] if 'symbol' in df.columns else '???'
+    def _reject(reason):
+        logger.info(f"   ❌ confirm_entry {sym} ({direction}): {reason}")
+        return False
 
     if len(df) < LOOKBACK:
-        return False
+        return _reject(f"datos insuficientes ({len(df)}<{LOOKBACK} velas)")
 
     curr = df.iloc[-2]
     hist = df.iloc[-LOOKBACK:-1]
@@ -277,26 +273,27 @@ def confirm_entry(df, direction):
     macd_hist = macd - macd_sig
 
     if atr <= 0 or close_p <= 0:
-        return False
+        return _reject(f"ATR={atr:.6f} o close={close_p:.6f} inválido")
 
-    # -- 1. ADX PERCENTIL PROPIO ---------------------------------------------
-    # Tendencia fuerte = ADX > percentil 55 de su propia historia reciente.
+    # -- 1. ADX PERCENTIL PROPIO
     adx_hist = hist['adx'].replace(0, np.nan).dropna()
     if len(adx_hist) < 20:
-        return False
-    if adx <= float(adx_hist.quantile(0.55)):
-        return False
+        return _reject(f"ADX: historial insuficiente ({len(adx_hist)}<20)")
+    adx_p55 = float(adx_hist.quantile(0.55))
+    if adx <= adx_p55:
+        return _reject(f"ADX={adx:.1f} ≤ p55={adx_p55:.1f}")
 
-    # -- 2. VOLUMEN Z-SCORE --------------------------------------------------
-    # Conviccion real: volumen al menos 0.6 sigma sobre su propia media.
+    # -- 2. VOLUMEN Z-SCORE
     vol_hist = hist['volume'].replace(0, np.nan).dropna()
     if len(vol_hist) >= 20:
         vol_mean = float(vol_hist.mean())
         vol_std  = float(vol_hist.std())
-        if vol_std > 0 and (volume - vol_mean) / vol_std < 0.6:
-            return False
+        if vol_std > 0:
+            vol_z = (volume - vol_mean) / vol_std
+            if vol_z < 0.6:
+                return _reject(f"Vol z-score={vol_z:.2f} < 0.6")
 
-    # -- 3. FUERZA RELATIVA DE LA VELA ---------------------------------------
+    # -- 3. FUERZA RELATIVA DE LA VELA
     candle_range = high_p - low_p
     if candle_range > 0:
         body_pct      = abs(close_p - open_p) / candle_range
@@ -304,64 +301,70 @@ def confirm_entry(df, direction):
         hist_bodies   = (hist['close'] - hist['open']).abs()
         hist_body_pct = (hist_bodies / hist_ranges).dropna()
         if len(hist_body_pct) >= 20:
-            if body_pct < float(hist_body_pct.quantile(0.40)):
-                return False
+            body_p40 = float(hist_body_pct.quantile(0.40))
+            if body_pct < body_p40:
+                return _reject(f"Cuerpo vela={body_pct:.2f} < p40={body_p40:.2f}")
 
         close_pos = (close_p - low_p) / candle_range
         if direction == 'LONG'  and close_pos < 0.55:
-            return False
+            return _reject(f"LONG: cierre bajo en rango ({close_pos:.2f} < 0.55)")
         if direction == 'SHORT' and close_pos > 0.45:
-            return False
+            return _reject(f"SHORT: cierre alto en rango ({close_pos:.2f} > 0.45)")
 
-    # -- 4. KF SLOPE NORMALIZADO ---------------------------------------------
+    # -- 4. KF SLOPE NORMALIZADO
     slope_hist = hist['kf_slope'].abs().replace(0, np.nan).dropna()
     if len(slope_hist) >= 20:
         slope_p55 = float(slope_hist.quantile(0.55))
         if direction == 'LONG'  and kf_slope < slope_p55:
-            return False
+            return _reject(f"LONG: kf_slope={kf_slope:+.5f} < p55={slope_p55:.5f}")
         if direction == 'SHORT' and kf_slope > -slope_p55:
-            return False
+            return _reject(f"SHORT: kf_slope={kf_slope:+.5f} > -p55={-slope_p55:.5f}")
 
-    # -- 5. RSI MOMENTUM ZONE DINAMICA ---------------------------------------
+    # -- 5. RSI MOMENTUM ZONE DINAMICA
     rsi_hist = hist['rsi'].replace(0, np.nan).dropna()
     if len(rsi_hist) >= 20:
         rsi_min   = float(rsi_hist.quantile(0.20))
         rsi_max   = float(rsi_hist.quantile(0.80))
         rsi_range = rsi_max - rsi_min
         if rsi_range > 5:
-            if direction == 'LONG'  and rsi < rsi_min + rsi_range * 0.45:
-                return False
-            if direction == 'SHORT' and rsi > rsi_min + rsi_range * 0.55:
-                return False
+            rsi_lo = rsi_min + rsi_range * 0.45
+            rsi_hi = rsi_min + rsi_range * 0.55
+            if direction == 'LONG'  and rsi < rsi_lo:
+                return _reject(f"LONG: RSI={rsi:.1f} < zona {rsi_lo:.1f}")
+            if direction == 'SHORT' and rsi > rsi_hi:
+                return _reject(f"SHORT: RSI={rsi:.1f} > zona {rsi_hi:.1f}")
 
-    # -- 6. MACD DIRECCION ---------------------------------------------------
+    # -- 6. MACD DIRECCION
     if direction == 'LONG'  and macd_hist <= 0:
-        return False
+        return _reject(f"LONG: MACD hist={macd_hist:.4f} ≤ 0")
     if direction == 'SHORT' and macd_hist >= 0:
-        return False
+        return _reject(f"SHORT: MACD hist={macd_hist:.4f} ≥ 0")
 
-    # -- 7. EXTENSION PERCENTIL PROPIO ---------------------------------------
+    # -- 7. EXTENSION PERCENTIL PROPIO
     if kf_price > 0 and atr > 0:
         curr_ext    = abs(close_p - kf_price) / atr
         ext_history = ((hist['close'] - hist['kf_price']).abs() /
                        hist['atr'].replace(0, np.nan)).dropna()
         if len(ext_history) >= 20:
-            if curr_ext > float(ext_history.quantile(0.80)):
-                return False
+            ext_p80 = float(ext_history.quantile(0.80))
+            if curr_ext > ext_p80:
+                return _reject(f"Sobreextendido: ext={curr_ext:.2f} > p80={ext_p80:.2f}")
 
-    # -- 8. DIRECCION vs KALMAN ----------------------------------------------
+    # -- 8. DIRECCION vs KALMAN
     if direction == 'LONG'  and close_p < kf_price:
-        return False
+        return _reject(f"LONG: close={close_p:.4f} < kf_price={kf_price:.4f}")
     if direction == 'SHORT' and close_p > kf_price:
-        return False
+        return _reject(f"SHORT: close={close_p:.4f} > kf_price={kf_price:.4f}")
 
-    # -- 9. ENTROPY ADAPTATIVA -----------------------------------------------
+    # -- 9. ENTROPY ADAPTATIVA
     entropy_hist = hist['entropy'].replace(0, np.nan).dropna()
     if len(entropy_hist) >= 20:
-        if entropy > float(entropy_hist.quantile(0.70)):
-            return False
+        ent_p70 = float(entropy_hist.quantile(0.70))
+        if entropy > ent_p70:
+            return _reject(f"Entropy={entropy:.3f} > p70={ent_p70:.3f} (caótico)")
 
     return True
+
 
 
 # ================================================================
