@@ -279,9 +279,10 @@ def confirm_entry(df, direction):
     adx_hist = hist['adx'].replace(0, np.nan).dropna()
     if len(adx_hist) < 20:
         return _reject(f"ADX: historial insuficiente ({len(adx_hist)}<20)")
-    adx_p55 = float(adx_hist.quantile(0.55))
-    if adx <= adx_p55:
-        return _reject(f"ADX={adx:.1f} ≤ p55={adx_p55:.1f}")
+    adx_p40 = float(adx_hist.quantile(0.40))
+    if adx <= adx_p40:
+        return _reject(f"ADX={adx:.1f} ≤ p40={adx_p40:.1f}")
+
 
     # -- 2. VOLUMEN Z-SCORE
     vol_hist = hist['volume'].replace(0, np.nan).dropna()
