@@ -1,0 +1,9 @@
+# Git — Ignorar archivos sensibles y temporales
+.env
+*.log
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+logs/
+data_cache/

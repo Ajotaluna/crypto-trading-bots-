@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  alert-system:
+    build: .
+    container_name: crypto-alert-system
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Persiste los logs fuera del container
+      - ./logs:/app/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
