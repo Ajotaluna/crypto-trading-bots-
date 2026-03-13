@@ -1,0 +1,284 @@
+
+============================================================
+📅 DÍA: 2026-01-23 | CAPITAL LIBRE: $1000.00
+============================================================
+📦 Posiciones Abiertas: 10 (Aprox $100.00 c/u)
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [RIFUSDT] | Invertido: $99.90 | PnL: -3.22%
+⏳ Cierre TimeStop: [FILUSDT] | Invertido: $99.90 | PnL: -1.72%
+⏳ Cierre TimeStop: [KAITOUSDT] | Invertido: $99.90 | PnL: +5.68%
+⏳ Cierre TimeStop: [KERNELUSDT] | Invertido: $99.90 | PnL: +1.39%
+⏳ Cierre TimeStop: [RENDERUSDT] | Invertido: $99.90 | PnL: -1.30%
+⏳ Cierre TimeStop: [THETAUSDT] | Invertido: $99.90 | PnL: -2.62%
+⏳ Cierre TimeStop: [BIOUSDT] | Invertido: $99.90 | PnL: -7.58%
+⏳ Cierre TimeStop: [GALAUSDT] | Invertido: $99.90 | PnL: -1.54%
+⏳ Cierre TimeStop: [LIGHTUSDT] | Invertido: $99.90 | PnL: -4.27%
+⏳ Cierre TimeStop: [SUSHIUSDT] | Invertido: $99.90 | PnL: -0.93%
+💰 Balance Final del Día: $981.95
+
+============================================================
+📅 DÍA: 2026-01-24 | CAPITAL LIBRE: $981.95
+============================================================
+📦 Posiciones Abiertas: 10 (Aprox $98.19 c/u)
+🩸 TIER 1 (+10%): [ENSOUSDT] (+19.8%) devoró al Zombi [PARTIUSDT] (0.6%) | $98.54 inyectados.
+🩸 TIER 2 (+20%): [ENSOUSDT] (+20.0%) devoró al Zombi [ACEUSDT] (1.4%) | $99.39 inyectados.
+🩸 TIER 1 (+10%): [SOMIUSDT] (+13.2%) devoró al Zombi [0GUSDT] (1.0%) | $98.98 inyectados.
+🩸 TIER 2 (+20%): [SOMIUSDT] (+26.4%) devoró al Zombi [42USDT] (-1.0%) | $96.99 inyectados.
+🩸 TIER 3 (+30%): [SOMIUSDT] (+34.9%) devoró al Zombi [GPSUSDT] (-2.3%) | $95.72 inyectados.
+🩸 TIER 1 (+10%): [OPENUSDT] (+10.2%) devoró al Zombi [RIFUSDT] (1.5%) | $99.48 inyectados.
+🩸 TIER 4 (+40%): [SOMIUSDT] (+42.5%) devoró al Zombi [NOMUSDT] (4.1%) | $102.06 inyectados.
+🩸 TIER 3 (+30%): [ENSOUSDT] (+32.5%) devoró al Zombi [OPENUSDT] (5.1%) | $197.68 inyectados.
+🩸 TIER 5 (+50%): [SOMIUSDT] (+52.4%) devoró al Zombi [ENSOUSDT] (38.4%) | $569.55 inyectados.
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [SOMIUSDT] | Invertido: $1060.43 | PnL: +62.29%
+💰 Balance Final del Día: $1261.37
+
+============================================================
+📅 DÍA: 2026-01-25 | CAPITAL LIBRE: $1261.37
+============================================================
+📦 Posiciones Abiertas: 10 (Aprox $126.14 c/u)
+🩸 TIER 1 (+10%): [NOMUSDT] (+10.7%) devoró al Zombi [INITUSDT] (-1.1%) | $124.46 inyectados.
+🩸 TIER 2 (+20%): [NOMUSDT] (+22.7%) devoró al Zombi [ELSAUSDT] (-0.5%) | $125.24 inyectados.
+🩸 TIER 1 (+10%): [ZKCUSDT] (+10.6%) devoró al Zombi [WUSDT] (1.4%) | $127.61 inyectados.
+🩸 TIER 1 (+10%): [GUSDT] (+10.7%) devoró al Zombi [XPLUSDT] (2.2%) | $128.66 inyectados.
+🩸 TIER 1 (+10%): [AVNTUSDT] (+12.4%) devoró al Zombi [BLESSUSDT] (2.2%) | $128.64 inyectados.
+🩸 TIER 2 (+20%): [ZKCUSDT] (+24.9%) devoró al Zombi [STABLEUSDT] (-1.9%) | $123.45 inyectados.
+🩸 TIER 3 (+30%): [ZKCUSDT] (+35.2%) devoró al Zombi [GUSDT] (4.7%) | $253.16 inyectados.
+🩸 TIER 4 (+40%): [ZKCUSDT] (+43.6%) devoró al Zombi [AVNTUSDT] (8.0%) | $259.17 inyectados.
+🩸 TIER 5 (+50%): [ZKCUSDT] (+51.6%) devoró al Zombi [NOMUSDT] (20.0%) | $407.81 inyectados.
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [ZKCUSDT] | Invertido: $1296.04 | PnL: +41.91%
+💰 Balance Final del Día: $1383.90
+
+============================================================
+📅 DÍA: 2026-01-26 | CAPITAL LIBRE: $1383.90
+============================================================
+📦 Posiciones Abiertas: 6 (Aprox $230.65 c/u)
+🩸 TIER 1 (+10%): [RESOLVUSDT] (+10.2%) devoró al Zombi [NXPCUSDT] (-0.2%) | $229.82 inyectados.
+🩸 TIER 2 (+20%): [RESOLVUSDT] (+20.9%) devoró al Zombi [AEROUSDT] (-0.9%) | $228.22 inyectados.
+🩸 TIER 3 (+30%): [RESOLVUSDT] (+35.4%) devoró al Zombi [UBUSDT] (-1.4%) | $227.00 inyectados.
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [COLLECTUSDT] | Invertido: $230.42 | PnL: -26.20%
+⏳ Cierre TimeStop: [IPUSDT] | Invertido: $230.42 | PnL: -7.37%
+⏳ Cierre TimeStop: [RESOLVUSDT] | Invertido: $914.77 | PnL: +24.18%
+💰 Balance Final del Día: $1369.31
+
+============================================================
+📅 DÍA: 2026-01-27 | CAPITAL LIBRE: $1369.31
+============================================================
+📦 Posiciones Abiertas: 7 (Aprox $195.62 c/u)
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [AXLUSDT] | Invertido: $195.42 | PnL: -3.01%
+⏳ Cierre TimeStop: [SANDUSDT] | Invertido: $195.42 | PnL: -6.52%
+⏳ Cierre TimeStop: [MANAUSDT] | Invertido: $195.42 | PnL: -4.55%
+⏳ Cierre TimeStop: [STABLEUSDT] | Invertido: $195.42 | PnL: -0.36%
+⏳ Cierre TimeStop: [2ZUSDT] | Invertido: $195.42 | PnL: -4.72%
+⏳ Cierre TimeStop: [DUSKUSDT] | Invertido: $195.42 | PnL: -14.21%
+⏳ Cierre TimeStop: [USELESSUSDT] | Invertido: $195.42 | PnL: +1.34%
+💰 Balance Final del Día: $1304.03
+
+============================================================
+📅 DÍA: 2026-01-28 | CAPITAL LIBRE: $1304.03
+============================================================
+📦 Posiciones Abiertas: 8 (Aprox $163.00 c/u)
+🩸 TIER 1 (+10%): [FOGOUSDT] (+10.4%) devoró al Zombi [PIEVERSEUSDT] (0.1%) | $162.86 inyectados.
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [AVNTUSDT] | Invertido: $162.84 | PnL: -6.03%
+⏳ Cierre TimeStop: [LYNUSDT] | Invertido: $162.84 | PnL: -12.46%
+⏳ Cierre TimeStop: [YBUSDT] | Invertido: $162.84 | PnL: -1.96%
+⏳ Cierre TimeStop: [IPUSDT] | Invertido: $162.84 | PnL: -3.09%
+⏳ Cierre TimeStop: [BEATUSDT] | Invertido: $162.84 | PnL: -7.87%
+⏳ Cierre TimeStop: [FOGOUSDT] | Invertido: $325.54 | PnL: +5.43%
+⏳ Cierre TimeStop: [GUNUSDT] | Invertido: $162.84 | PnL: +0.37%
+💰 Balance Final del Día: $1252.29
+
+============================================================
+📅 DÍA: 2026-01-29 | CAPITAL LIBRE: $1252.29
+============================================================
+📦 Posiciones Abiertas: 7 (Aprox $178.90 c/u)
+🩸 TIER 1 (+10%): [QUSDT] (+28.6%) devoró al Zombi [LINEAUSDT] (0.1%) | $178.79 inyectados.
+🩸 TIER 2 (+20%): [QUSDT] (+28.6%) devoró al Zombi [PUMPUSDT] (-0.5%) | $177.64 inyectados.
+🩸 TIER 3 (+30%): [QUSDT] (+35.6%) devoró al Zombi [ALLOUSDT] (0.9%) | $180.20 inyectados.
+🩸 TIER 1 (+10%): [BULLAUSDT] (+32.8%) devoró al Zombi [RIVERUSDT] (-2.9%) | $173.28 inyectados.
+🩸 TIER 2 (+20%): [BULLAUSDT] (+32.8%) devoró al Zombi [KAITOUSDT] (-3.4%) | $172.50 inyectados.
+🩸 TIER 3 (+30%): [BULLAUSDT] (+32.8%) devoró al Zombi [QUSDT] (33.5%) | $792.09 inyectados.
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [BULLAUSDT] | Invertido: $1315.45 | PnL: +98.17%
+💰 Balance Final del Día: $2049.05
+
+============================================================
+📅 DÍA: 2026-01-30 | CAPITAL LIBRE: $2049.05
+============================================================
+📦 Posiciones Abiertas: 10 (Aprox $204.91 c/u)
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [FARTCOINUSDT] | Invertido: $204.70 | PnL: +1.06%
+⏳ Cierre TimeStop: [AAVEUSDT] | Invertido: $204.70 | PnL: +2.24%
+⏳ Cierre TimeStop: [ADAUSDT] | Invertido: $204.70 | PnL: +0.43%
+⏳ Cierre TimeStop: [BCHUSDT] | Invertido: $204.70 | PnL: -2.26%
+⏳ Cierre TimeStop: [BTCUSDT] | Invertido: $204.70 | PnL: -0.61%
+⏳ Cierre TimeStop: [CAKEUSDT] | Invertido: $204.70 | PnL: +3.21%
+⏳ Cierre TimeStop: [DYDXUSDT] | Invertido: $204.70 | PnL: +1.32%
+⏳ Cierre TimeStop: [EGLDUSDT] | Invertido: $204.70 | PnL: +0.57%
+⏳ Cierre TimeStop: [ENSUSDT] | Invertido: $204.70 | PnL: +0.20%
+⏳ Cierre TimeStop: [ETHFIUSDT] | Invertido: $204.70 | PnL: +4.29%
+💰 Balance Final del Día: $2066.36
+
+============================================================
+📅 DÍA: 2026-01-31 | CAPITAL LIBRE: $2066.36
+============================================================
+📦 Posiciones Abiertas: 4 (Aprox $516.59 c/u)
+🩸 TIER 1 (+10%): [ENSOUSDT] (+10.7%) devoró al Zombi [ZAMAUSDT] (-2.2%) | $504.47 inyectados.
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [AUCTIONUSDT] | Invertido: $516.07 | PnL: +7.45%
+⏳ Cierre TimeStop: [WCTUSDT] | Invertido: $516.07 | PnL: +6.19%
+⏳ Cierre TimeStop: [ENSOUSDT] | Invertido: $1020.04 | PnL: +13.94%
+💰 Balance Final del Día: $2210.93
+
+============================================================
+📅 DÍA: 2026-02-01 | CAPITAL LIBRE: $2210.93
+============================================================
+📦 Posiciones Abiertas: 10 (Aprox $221.09 c/u)
+🩸 TIER 1 (+10%): [ZKUSDT] (+10.1%) devoró al Zombi [NOMUSDT] (-0.4%) | $219.86 inyectados.
+🩸 TIER 1 (+10%): [ZKPUSDT] (+13.4%) devoró al Zombi [SONICUSDT] (-0.2%) | $220.22 inyectados.
+🩸 TIER 1 (+10%): [ZBTUSDT] (+11.7%) devoró al Zombi [ENSOUSDT] (2.6%) | $226.29 inyectados.
+🩸 TIER 1 (+10%): [ZORAUSDT] (+36.1%) devoró al Zombi [ZKPUSDT] (1.9%) | $422.26 inyectados.
+🩸 TIER 2 (+20%): [ZORAUSDT] (+36.1%) devoró al Zombi [ZAMAUSDT] (-1.9%) | $216.38 inyectados.
+🩸 TIER 3 (+30%): [ZORAUSDT] (+36.1%) devoró al Zombi [KITEUSDT] (-2.8%) | $214.58 inyectados.
+🩸 TIER 4 (+40%): [ZORAUSDT] (+44.6%) devoró al Zombi [ZKCUSDT] (-2.5%) | $215.19 inyectados.
+🩸 TIER 2 (+20%): [ZKUSDT] (+23.3%) devoró al Zombi [ZBTUSDT] (0.7%) | $425.87 inyectados.
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [ZKUSDT] | Invertido: $865.96 | PnL: +8.95%
+⏳ Cierre TimeStop: [ZORAUSDT] | Invertido: $1288.21 | PnL: +6.08%
+💰 Balance Final del Día: $1888.65
+
+============================================================
+📅 DÍA: 2026-02-02 | CAPITAL LIBRE: $1888.65
+============================================================
+📦 Posiciones Abiertas: 9 (Aprox $209.85 c/u)
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [AEROUSDT] | Invertido: $209.64 | PnL: -0.93%
+⏳ Cierre TimeStop: [ALICEUSDT] | Invertido: $209.64 | PnL: +0.75%
+⏳ Cierre TimeStop: [POLUSDT] | Invertido: $209.64 | PnL: -1.41%
+⏳ Cierre TimeStop: [AVNTUSDT] | Invertido: $209.64 | PnL: -0.37%
+⏳ Cierre TimeStop: [ESPORTSUSDT] | Invertido: $209.64 | PnL: +2.48%
+⏳ Cierre TimeStop: [IPUSDT] | Invertido: $209.64 | PnL: +7.62%
+⏳ Cierre TimeStop: [POWERUSDT] | Invertido: $209.64 | PnL: -0.40%
+⏳ Cierre TimeStop: [CRVUSDT] | Invertido: $209.64 | PnL: -1.44%
+⏳ Cierre TimeStop: [LINEAUSDT] | Invertido: $209.64 | PnL: +2.05%
+💰 Balance Final del Día: $1902.41
+
+============================================================
+📅 DÍA: 2026-02-03 | CAPITAL LIBRE: $1902.41
+============================================================
+📦 Posiciones Abiertas: 4 (Aprox $475.60 c/u)
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [STXUSDT] | Invertido: $475.13 | PnL: +2.04%
+⏳ Cierre TimeStop: [AXLUSDT] | Invertido: $475.13 | PnL: +1.96%
+⏳ Cierre TimeStop: [ESPORTSUSDT] | Invertido: $475.13 | PnL: -2.49%
+⏳ Cierre TimeStop: [GUSDT] | Invertido: $475.13 | PnL: +1.97%
+💰 Balance Final del Día: $1915.13
+
+============================================================
+📅 DÍA: 2026-02-04 | CAPITAL LIBRE: $1915.13
+============================================================
+🛑 DÍA DESCARTADO (Mercado Muerto): El escáner sólo encontró 2 señales. Mínimo requerido: 5. Dinero a salvo en Cash.
+
+============================================================
+📅 DÍA: 2026-02-05 | CAPITAL LIBRE: $1915.13
+============================================================
+🛑 DÍA DESCARTADO (Mercado Muerto): El escáner sólo encontró 2 señales. Mínimo requerido: 5. Dinero a salvo en Cash.
+
+============================================================
+📅 DÍA: 2026-02-06 | CAPITAL LIBRE: $1915.13
+============================================================
+📦 Posiciones Abiertas: 7 (Aprox $273.59 c/u)
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [HYPEUSDT] | Invertido: $273.32 | PnL: -7.88%
+⏳ Cierre TimeStop: [POWERUSDT] | Invertido: $273.32 | PnL: +0.76%
+⏳ Cierre TimeStop: [XPTUSDT] | Invertido: $273.32 | PnL: +8.47%
+⏳ Cierre TimeStop: [PIEVERSEUSDT] | Invertido: $273.32 | PnL: -0.10%
+⏳ Cierre TimeStop: [ZKUSDT] | Invertido: $273.32 | PnL: -0.13%
+⏳ Cierre TimeStop: [COLLECTUSDT] | Invertido: $273.32 | PnL: -7.78%
+⏳ Cierre TimeStop: [XPDUSDT] | Invertido: $273.32 | PnL: +4.21%
+💰 Balance Final del Día: $1904.57
+
+============================================================
+📅 DÍA: 2026-02-07 | CAPITAL LIBRE: $1904.57
+============================================================
+📦 Posiciones Abiertas: 10 (Aprox $190.46 c/u)
+🩸 TIER 1 (+10%): [LAUSDT] (+11.3%) devoró al Zombi [JTOUSDT] (0.1%) | $190.22 inyectados.
+🩸 TIER 2 (+20%): [LAUSDT] (+20.1%) devoró al Zombi [FHEUSDT] (0.5%) | $191.05 inyectados.
+🩸 TIER 3 (+30%): [LAUSDT] (+30.2%) devoró al Zombi [INUSDT] (-0.4%) | $189.24 inyectados.
+🩸 TIER 1 (+10%): [HUSDT] (+10.4%) devoró al Zombi [FOGOUSDT] (1.8%) | $193.55 inyectados.
+🩸 TIER 1 (+10%): [STABLEUSDT] (+11.2%) devoró al Zombi [HUSDT] (0.1%) | $365.36 inyectados.
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [LAUSDT] | Invertido: $760.21 | PnL: +25.25%
+⏳ Cierre TimeStop: [SOMIUSDT] | Invertido: $190.27 | PnL: -8.60%
+⏳ Cierre TimeStop: [FIGHTUSDT] | Invertido: $190.27 | PnL: -8.43%
+⏳ Cierre TimeStop: [YALAUSDT] | Invertido: $190.27 | PnL: +2.70%
+⏳ Cierre TimeStop: [STABLEUSDT] | Invertido: $555.27 | PnL: +9.50%
+💰 Balance Final del Día: $1940.93
+
+============================================================
+📅 DÍA: 2026-02-08 | CAPITAL LIBRE: $1940.93
+============================================================
+📦 Posiciones Abiertas: 6 (Aprox $323.49 c/u)
+🩸 TIER 1 (+10%): [ASTERUSDT] (+10.1%) devoró al Zombi [PUMPUSDT] (0.4%) | $324.21 inyectados.
+🩸 TIER 1 (+10%): [DUSKUSDT] (+10.1%) devoró al Zombi [FHEUSDT] (4.2%) | $336.37 inyectados.
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [DUSKUSDT] | Invertido: $659.20 | PnL: +11.47%
+⏳ Cierre TimeStop: [MUBARAKUSDT] | Invertido: $323.16 | PnL: -4.42%
+⏳ Cierre TimeStop: [ASTERUSDT] | Invertido: $647.05 | PnL: +12.34%
+⏳ Cierre TimeStop: [SENTUSDT] | Invertido: $323.16 | PnL: -4.24%
+💰 Balance Final del Día: $2010.27
+
+============================================================
+📅 DÍA: 2026-02-09 | CAPITAL LIBRE: $2010.27
+============================================================
+📦 Posiciones Abiertas: 10 (Aprox $201.03 c/u)
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [XPTUSDT] | Invertido: $200.83 | PnL: -1.07%
+⏳ Cierre TimeStop: [AXSUSDT] | Invertido: $200.83 | PnL: -4.78%
+⏳ Cierre TimeStop: [1000FLOKIUSDT] | Invertido: $200.83 | PnL: +2.72%
+⏳ Cierre TimeStop: [ETHUSDT] | Invertido: $200.83 | PnL: +2.71%
+⏳ Cierre TimeStop: [GUSDT] | Invertido: $200.83 | PnL: +2.48%
+⏳ Cierre TimeStop: [MONUSDT] | Invertido: $200.83 | PnL: +3.62%
+⏳ Cierre TimeStop: [MYXUSDT] | Invertido: $200.83 | PnL: +0.93%
+⏳ Cierre TimeStop: [ARKMUSDT] | Invertido: $200.83 | PnL: +2.65%
+⏳ Cierre TimeStop: [LINKUSDT] | Invertido: $200.83 | PnL: +2.56%
+⏳ Cierre TimeStop: [SOLUSDT] | Invertido: $200.83 | PnL: +2.95%
+💰 Balance Final del Día: $2035.98
+
+============================================================
+📅 DÍA: 2026-02-10 | CAPITAL LIBRE: $2035.98
+============================================================
+📦 Posiciones Abiertas: 10 (Aprox $203.60 c/u)
+🩸 TIER 1 (+10%): [XNYUSDT] (+11.1%) devoró al Zombi [XVGUSDT] (-0.1%) | $203.09 inyectados.
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [STABLEUSDT] | Invertido: $203.39 | PnL: +3.20%
+⏳ Cierre TimeStop: [AXLUSDT] | Invertido: $203.39 | PnL: -3.61%
+⏳ Cierre TimeStop: [IPUSDT] | Invertido: $203.39 | PnL: -8.00%
+⏳ Cierre TimeStop: [XNYUSDT] | Invertido: $406.28 | PnL: +4.16%
+⏳ Cierre TimeStop: [DASHUSDT] | Invertido: $203.39 | PnL: -5.83%
+⏳ Cierre TimeStop: [ZROUSDT] | Invertido: $203.39 | PnL: -8.21%
+⏳ Cierre TimeStop: [MINAUSDT] | Invertido: $203.39 | PnL: +0.61%
+⏳ Cierre TimeStop: [APRUSDT] | Invertido: $203.39 | PnL: +8.47%
+⏳ Cierre TimeStop: [GPSUSDT] | Invertido: $203.39 | PnL: -30.60%
+💰 Balance Final del Día: $1937.82
+
+============================================================
+📅 DÍA: 2026-02-11 | CAPITAL LIBRE: $1937.82
+============================================================
+📦 Posiciones Abiertas: 10 (Aprox $193.78 c/u)
+🩸 TIER 1 (+10%): [SONICUSDT] (+10.8%) devoró al Zombi [OGUSDT] (-0.1%) | $193.28 inyectados.
+⏱️ TIME STOP ACTIVADO (12H) - Cerrando Sobrevivientes...
+⏳ Cierre TimeStop: [FUSDT] | Invertido: $193.59 | PnL: +0.50%
+⏳ Cierre TimeStop: [KASUSDT] | Invertido: $193.59 | PnL: +3.80%
+⏳ Cierre TimeStop: [ZBTUSDT] | Invertido: $193.59 | PnL: +3.08%
+⏳ Cierre TimeStop: [SONICUSDT] | Invertido: $386.67 | PnL: +4.58%
+⏳ Cierre TimeStop: [0GUSDT] | Invertido: $193.59 | PnL: -1.35%
+⏳ Cierre TimeStop: [WCTUSDT] | Invertido: $193.59 | PnL: +2.17%
+⏳ Cierre TimeStop: [BLUAIUSDT] | Invertido: $193.59 | PnL: -0.77%
+⏳ Cierre TimeStop: [ETHFIUSDT] | Invertido: $193.59 | PnL: +4.06%
+⏳ Cierre TimeStop: [ORDIUSDT] | Invertido: $193.59 | PnL: -0.83%
+💰 Balance Final del Día: $1952.03

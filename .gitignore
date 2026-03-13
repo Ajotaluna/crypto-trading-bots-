@@ -67,6 +67,7 @@ trend_following_bot/nascent_scanner/data_30d/
 trend_following_bot/nascent_scanner/backtest_results/
 trend_following_bot/nascent_scanner/reports/
 trend_following_bot/nascent_scanner/__pycache__/
+crypto_alert_system
 
 # Formatos de datos pesados
 *.csv
@@ -112,6 +113,13 @@ trend_following_bot/test_prod_fix.py
 trend_following_bot/generate_whitelist.py
 trend_following_bot/main_backup.py
 trend_following_bot/sniper_mechanics_design.md
+
+# Scripts de backtesting, análisis y diagnóstico (no productivos)
+trend_following_bot/backtest*.py
+trend_following_bot/diagnose_entry.py
+trend_following_bot/scanner_accuracy.py
+trend_following_bot/daily_predictor.py
+setup_local.bat
 
 # Cualquier test*.py dentro del bot principal (los del nascent_scanner SÍ se versionan)
 trend_following_bot/test*.py

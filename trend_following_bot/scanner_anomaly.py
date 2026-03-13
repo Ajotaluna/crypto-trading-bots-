@@ -17,6 +17,7 @@ Dos modos de operación controlados por `boot_mode`:
 """
 import numpy as np
 import pandas as pd
+import requests
 
 
 # ═══════════════════════════════════════════════════════════
@@ -81,28 +82,45 @@ def _trend_age_candles(close: pd.Series, direction: str) -> int:
 
 def _is_in_compression(close: pd.Series, high: pd.Series, low: pd.Series) -> bool:
     """
-    Detecta si el par está en compresión (rango estrecho sin tendencia clara).
-    Se usa en BOOT MODE para validar que el par realmente no ha roto aún.
-    
-    Returns True si el rango de las últimas 16 velas (4h) es < 2x el ATR de 14 velas.
+    Detecta si el par está en compresión usando Bollinger Bands Squeeze.
     """
     try:
+        # Calcular Bandas de Bollinger (20 periodos, 2 std dev)
+        sma = close.rolling(window=20).mean()
+        std = close.rolling(window=20).std()
+        upper = sma + (std * 2)
+        lower = sma - (std * 2)
+        
+        # Ancho de las bandas (Bollinger Band Width)
+        bbw = (upper - lower) / sma
+        
+        # Squeeze histórico: comparar BBW actual con el BBW más bajo de las últimas 96 velas (24h)
+        bbw_min_24h = bbw.iloc[-96:].min()
+        bbw_actual = bbw.iloc[-1]
+        
+        # Confirmar si estamos en un Squeeze (BBW muy cerca de su mínimo de 24h)
+        # o si el rango general es extremadamente estrecho (< 1.5% de variación total)
+        is_squeeze = (bbw_actual <= bbw_min_24h * 1.2) and (bbw_actual > 0)
+        
         recent_high = high.iloc[-16:].max()
         recent_low  = low.iloc[-16:].min()
-        range_4h    = recent_high - recent_low
-
-        tr = pd.concat([
-            high - low,
-            (high - close.shift(1)).abs(),
-            (low  - close.shift(1)).abs()
-        ], axis=1).max(axis=1)
-        atr_14 = tr.iloc[-30:-16].mean()  # ATR del período anterior a la ventana
-
-        if atr_14 <= 0:
-            return False
-        return (range_4h / atr_14) < 2.5
+        range_pct   = (recent_high - recent_low) / recent_low
+        
+        return is_squeeze or (range_pct < 0.015)
+        
     except Exception:
         return False
+
+def _calculate_rsi(close: pd.Series, periods: int = 14) -> pd.Series:
+    """Calcula el RSI básico."""
+    delta = close.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=periods).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=periods).mean()
+    
+    # Prevenir divisiones por cero
+    rs = gain / loss.replace(0, np.nan)
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.fillna(50)  # RSI neutral si no hay datos suficientes
 
 
 # ═══════════════════════════════════════════════════════════
@@ -209,6 +227,24 @@ class AnomalyScanner:
                 vol_last_1h = volume.iloc[-4:].sum()
                 avg_vol_1h  = volume.iloc[-96:].sum() / 24
                 rvol        = (vol_last_1h / avg_vol_1h) if avg_vol_1h > 0 else 0
+                
+                # Validación de Vela Vela (El Breakout necesita volumen real)
+                avg_vol_20   = volume.iloc[-20:].mean()
+                vol_actual   = volume.iloc[-1]
+                vol_bar_mult = (vol_actual / avg_vol_20) if avg_vol_20 > 0 else 0
+
+                # Wicks (Mechas) - Detectar rechazos perjudiciales en la vela actual
+                body_actual = abs(close.iloc[-1] - open_p.iloc[-1])
+                wick_up     = high.iloc[-1] - max(close.iloc[-1], open_p.iloc[-1])
+                wick_down   = min(close.iloc[-1], open_p.iloc[-1]) - low.iloc[-1]
+                
+                # Porcentaje de mecha con respecto al cuerpo (mechas más grandes que el cuerpo son rojas)
+                wick_up_pct   = (wick_up / body_actual) if body_actual > 0 else 2.0
+                wick_down_pct = (wick_down / body_actual) if body_actual > 0 else 2.0
+
+                # RSI (14 velas)
+                rsi_series = _calculate_rsi(close)
+                rsi_actual = rsi_series.iloc[-1]
 
                 # Barrier Break: posición relativa al rango de las últimas 12h
                 high_12h   = high.iloc[-48:-2].max()
@@ -223,6 +259,10 @@ class AnomalyScanner:
                 metrics[symbol] = {
                     'kick_mult':       kick_mult,
                     'rvol':            rvol,
+                    'vol_bar_mult':    vol_bar_mult,
+                    'wick_up_pct':     wick_up_pct,
+                    'wick_down_pct':   wick_down_pct,
+                    'rsi':             rsi_actual,
                     'range_pct':       range_pct,
                     'long_age':        long_age,
                     'short_age':       short_age,
@@ -292,9 +332,36 @@ class AnomalyScanner:
                 elif m['range_pct'] >= 85:
                     score += 10
                     reasons.append("TESTING_12H_HIGH")
+                elif m['range_pct'] < 70 and m['range_pct'] > 30:
+                    score -= 20
+                    reasons.append("MID_RANGE_CHOP")
+                    
+                # Validadores de Calidad (Bonus/Penalizaciones)
+                # 1. Volumen en la vela de breakout
+                if m['vol_bar_mult'] >= 1.5:
+                    score += 15
+                    reasons.append(f"BAR_VOL({m['vol_bar_mult']:.1f}x)")
+                elif m['vol_bar_mult'] < 1.0:
+                    score -= 15  # Breakouts sin volumen son sospechosos
+                    reasons.append("LOW_BAR_VOL")
+                    
+                # 2. Rechazo por Wicks (Mechas en contra de la direccionalidad)
+                if m['wick_up_pct'] > 1.0: # La mecha mide más que el cuerpo
+                    score -= 30
+                    reasons.append("WICK_REJECTION")
+                elif m['wick_up_pct'] > 0.5:
+                    score -= 10
+                    
+                # 3. RSI Exhaustion vs Momentum
+                if m['rsi'] > 80:
+                    score += 15  # Euforia parabólica, sumar puntos
+                    reasons.append(f"INERTIA_RSI({m['rsi']:.0f})")
+                elif m['rsi'] > 70:
+                    score -= 15  # Agotamiento preliminar
+                    reasons.append(f"EXHAUSTION_RSI({m['rsi']:.0f})")
 
-                # Filtro mínimo: debe tener algún kick y algún combustible
-                if score > 0 and m['kick_mult'] > 1.2:
+                # Filtro mínimo: score riguroso (>55) para evitar ruido
+                if score >= 60 and m['kick_mult'] > 1.2:
                     long_candidates.append({
                         'symbol':    s,
                         'score':     score,
@@ -348,8 +415,36 @@ class AnomalyScanner:
                 elif m['range_pct'] <= 15:
                     score += 10
                     reasons.append("TESTING_12H_LOW")
+                elif m['range_pct'] > 30 and m['range_pct'] < 70:
+                    score -= 20
+                    reasons.append("MID_RANGE_CHOP")
+                    
+                # Validadores de Calidad (Bonus/Penalizaciones)
+                # 1. Volumen en la vela de breakout (venta)
+                if m['vol_bar_mult'] >= 1.5:
+                    score += 15
+                    reasons.append(f"BAR_VOL({m['vol_bar_mult']:.1f}x)")
+                elif m['vol_bar_mult'] < 1.0:
+                    score -= 15  # Breakouts de caída sin volumen pueden ser bear traps
+                    reasons.append("LOW_BAR_VOL")
+                    
+                # 2. Rechazo por Wicks de compra
+                if m['wick_down_pct'] > 1.0: 
+                    score -= 30
+                    reasons.append("WICK_REJECTION")
+                elif m['wick_down_pct'] > 0.5:
+                    score -= 10
+                    
+                # 3. RSI Exhaustion vs Panic Panic
+                if m['rsi'] < 20:
+                    score += 15  # Capitulación/Pánico extremo
+                    reasons.append(f"PANIC_RSI({m['rsi']:.0f})")
+                elif m['rsi'] < 30:
+                    score -= 15  # Desaceleración
+                    reasons.append(f"EXHAUSTION_RSI({m['rsi']:.0f})")
 
-                if score > 0 and m['kick_mult'] > 1.2:
+                # Filtro mínimo: score riguroso (>55) para evitar ruido
+                if score >= 60 and m['kick_mult'] > 1.2:
                     short_candidates.append({
                         'symbol':    s,
                         'score':     score,
@@ -398,3 +493,54 @@ class AnomalyScanner:
                 roster.append(pick)
                 seen.add(pick['symbol'])
         return roster
+
+    @staticmethod
+    def broadcast_to_telegram(picks: list, bot_token: str, chat_id: str):
+        """
+        Envía el Top 10 diario formateado a un canal o chat de Telegram.
+        """
+        if not picks or not bot_token or not chat_id:
+            return False
+
+        mensaje = "🚀 *TOP ANOMALÍAS DIARIAS (SPOT)* 🚀\n"
+        mensaje += f"📅 Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+        mensaje += "----------------------------------------\n"
+        
+        for i, p in enumerate(picks, 1):
+            icono = "🟢" if p['direction'] == 'LONG' else "🔴"
+            mensaje += f"#{i} {icono} *{p['symbol']}*\n"
+            mensaje += f"   ➤ Score: {p['score']:.1f}pts | Kick: {p.get('volume_kick', 1.0):.2f}x\n"
+            
+            # Extract basic metrics safely to not crash if different schema
+            metrics = p.get('metrics', {})
+            ma_state = metrics.get('ma_state', 'N/A')
+            rsi = metrics.get('rsi', 0)
+            mensaje += f"   ➤ MA: {ma_state} | RSI: {rsi:.1f}\n\n"
+            
+        mensaje += "⚠️ _Anomalías fuertes cruzando el umbral de 60+pts._"
+        
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": mensaje,
+            "parse_mode": "Markdown"
+        }
+        
+        try:
+            response = requests.post(url, json=payload, timeout=10)
+            if response.status_code == 200:
+                print(f"✅ ¡Top enviado exitosamente a Telegram!")
+                return True
+            else:
+                print(f"❌ Error API Telegram: {response.text}")
+                return False
+        except Exception as e:
+            print(f"❌ Error de conexión Telegram: {e}")
+            return False
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print(" 📱 MÓDULO DE TELEGRAM INSTALADO")
+    print("=" * 60)
+    print("El método `AnomalyScanner.broadcast_to_telegram(picks, TOKEN, CHAT_ID)` ")
+    print("está listo para ser llamado desde otros scripts de Spot o el bot en vivo.")

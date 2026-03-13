@@ -30,10 +30,10 @@ HISTORY_NEEDED = 480
 WARMUP_DAYS = 5               # 5 days calibration per pair
 TOP_N = 10
 
-# SL/Trailing config — optimizado tras backtest (los SL grandes de 5 ATR destruyen el RR)
-INITIAL_SL_ATR = 2.5          # SL ajustado: reduce avg_loss de $20 a ~$10
-BE_LOCK_ATR = 1.0              # BE lock más rápido: proteger antes de que el trail sea inútil
-TRAIL_DISTANCE_ATR = 2.5      # Trail 2.5 ATR — balance entre tendencia y protección
+# SL/Trailing config — optimizado agresivamente para asegurar ganancias
+INITIAL_SL_ATR = 5.0          # SL de ~7% para absorber caídas brutas sin ser barrido
+BE_LOCK_ATR = 3.0             # Mover a Break-Even solo tras profit gigante
+TRAIL_DISTANCE_ATR = 4.0      # Trail súper holgado (estilo swing)
 
 # Scaled entry levels
 SCALE_LEVEL_2 = 1.5           # Add 2nd entry at -1.5 ATR pullback
@@ -449,9 +449,9 @@ class PositionManager:
         # Kp=0.4: If Price is 2 ATR above Kalman, Error=-2. Output=-0.8. Trail = 2.0 - 0.8 = 1.2.
         # Kd=0.1: Reactions to speed.
         
-        # Kp=0.4 modified to be a bit gentler:
-        # Don't strangle massive pumps (was Output=-0.8 limit). Limit to -0.3.
-        pid = PIDController(Kp=0.15, Ki=0.0, Kd=0.03, setpoint=0, output_limits=(-1.0, 0.5))
+        # Kp=0.05: Reactividad bajísima
+        # output_limits=(-2.0, 0.5): Puede reducir 2 ATR al trail original de 4.0
+        pid = PIDController(Kp=0.05, Ki=0.0, Kd=0.01, setpoint=0, output_limits=(-2.0, 0.5))
         
         self.positions[symbol] = {
             'symbol': symbol,
@@ -466,6 +466,7 @@ class PositionManager:
             'entry_idx': candle_idx,
             'be_locked': False,
             'best_price': entry_price,
+            'worst_price': entry_price,
             'atr_at_entry': atr_at_entry,
             'scale_level': 1,            # How many entries done (1-3)
             'pid': pid                   # Attached PID Controller
@@ -515,10 +516,12 @@ class PositionManager:
             if atr_val <= 0:
                 atr_val = c_close * 0.02
 
-            # Track best price for trailing
+            # Track best AND worst price
             if pos['direction'] == 'LONG':
                 if c_high > pos['best_price']:
                     pos['best_price'] = c_high
+                if c_low < pos['worst_price']:
+                    pos['worst_price'] = c_low
                 pnl_atr = (c_close - pos['avg_price']) / atr_val
                 
                 # PID Input: Distance from Kalman Trend (in ATR units)
@@ -528,6 +531,8 @@ class PositionManager:
             else:
                 if c_low < pos['best_price']:
                     pos['best_price'] = c_low
+                if c_high > pos['worst_price']:
+                    pos['worst_price'] = c_high
                 pnl_atr = (pos['avg_price'] - c_close) / atr_val
                 
                 # PID Input: Distance from Kalman Trend
@@ -551,11 +556,9 @@ class PositionManager:
                 closed.append(self._close_position(symbol, exit_price, reason, candle_idx))
                 continue
 
-            # 2. BREAKEVEN LOCK — activar más rápido: 1.5 ATR en lugar de 2.0
-            # Antes: pnl_atr >= 2.0 → muchos trades llegaban a +1.8 ATR y volvian al SL
-            # Ahora: a +1.5 ya se bloquea el BE, convirtiendo más trades en 'gratis'
+            # 2. BREAKEVEN LOCK — activar cuando se supera el BE_LOCK_ATR configurado
             hold_candles = candle_idx - pos['entry_idx']
-            if not pos['be_locked'] and pnl_atr >= 1.5:
+            if not pos['be_locked'] and pnl_atr >= BE_LOCK_ATR:
                 buffer = pos['avg_price'] * 0.002
                 if pos['direction'] == 'LONG':
                     pos['sl'] = pos['avg_price'] + buffer
@@ -578,8 +581,8 @@ class PositionManager:
                 # Base is user config
                 current_trail_atr = TRAIL_DISTANCE_ATR + pid_adjust
                 
-                # Clamp: mín 1.2 ATR (permite apretarse en profits grandes) / máx 4.0 ATR
-                current_trail_atr = max(1.2, min(4.0, current_trail_atr))
+                # Clamp: mín 0.7 ATR (permite apretarse al máximo en parabolas) / máx 3.0 ATR
+                current_trail_atr = max(0.7, min(3.0, current_trail_atr))
 
                 if pos['direction'] == 'LONG':
                     trail_sl = pos['best_price'] - (atr_val * current_trail_atr)
@@ -651,6 +654,15 @@ class PositionManager:
         fees = notional * COMMISSION * 2
         pnl_dollar = pnl_pct * notional - fees
 
+        # Calcular MAE (Maximum Adverse Excursion)
+        if pos['direction'] == 'LONG':
+            mae_pct = (pos['worst_price'] - pos['avg_price']) / pos['avg_price']
+        else:
+            mae_pct = (pos['avg_price'] - pos['worst_price']) / pos['avg_price']
+        
+        # MAE is always expressed as a negative number or zero (how much we suffered)
+        mae_pct = min(0.0, mae_pct)
+
         return {
             'symbol': symbol,
             'direction': pos['direction'],
@@ -658,6 +670,7 @@ class PositionManager:
             'exit_price': exit_price,
             'pnl_pct': pnl_pct * 100,
             'pnl_dollar': pnl_dollar,
+            'mae_pct': mae_pct * 100, # El peor drawdown sufrido como % negativo
             'reason': reason,
             'hold_candles': candle_idx - pos['entry_idx'],
             'be_locked': pos['be_locked'],

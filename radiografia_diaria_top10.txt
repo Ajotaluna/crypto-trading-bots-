@@ -1,0 +1,424 @@
+
+========================================
+📅 DÍA: 2026-01-23
+========================================
+[LONG] RIFUSDT    | MFE: +00.69% | MAE: -5.90 % | Ganó Primero: SI
+[LONG] FILUSDT    | MFE: +02.24% | MAE: -3.29 % | Ganó Primero: SI
+[SHORT] KAITOUSDT  | MFE: +06.62% | MAE: -4.58 % | Ganó Primero: NO (Retroceso)
+[LONG] KERNELUSDT | MFE: +08.33% | MAE: -0.77 % | Ganó Primero: NO (Retroceso)
+[LONG] RENDERUSDT | MFE: +01.78% | MAE: -4.05 % | Ganó Primero: SI
+[LONG] THETAUSDT  | MFE: +01.91% | MAE: -4.91 % | Ganó Primero: SI
+[LONG] BIOUSDT    | MFE: +01.55% | MAE: -11.93% | Ganó Primero: SI
+[LONG] GALAUSDT   | MFE: +02.15% | MAE: -4.15 % | Ganó Primero: SI
+[LONG] LIGHTUSDT  | MFE: +01.15% | MAE: -6.66 % | Ganó Primero: SI
+[LONG] SUSHIUSDT  | MFE: +01.42% | MAE: -3.83 % | Ganó Primero: SI
+[SHORT] AXSUSDT    | MFE: +12.36% | MAE: -5.44 % | Ganó Primero: SI
+[LONG] ARCUSDT    | MFE: +07.41% | MAE: -6.00 % | Ganó Primero: SI
+[LONG] MANAUSDT   | MFE: +06.56% | MAE: -8.48 % | Ganó Primero: SI
+[LONG] SYRUPUSDT  | MFE: +00.74% | MAE: -4.63 % | Ganó Primero: SI
+
+========================================
+📅 DÍA: 2026-01-24
+========================================
+[SHORT] 42USDT     | MFE: +00.79% | MAE: -3.66 % | Ganó Primero: NO (Retroceso)
+[LONG] ENSOUSDT   | MFE: +126.74% | MAE: -3.07 % | Ganó Primero: NO (Retroceso)
+[LONG] PARTIUSDT  | MFE: +02.05% | MAE: -1.53 % | Ganó Primero: SI
+[LONG] OPENUSDT   | MFE: +15.67% | MAE: -0.79 % | Ganó Primero: NO (Retroceso)
+[LONG] NOMUSDT    | MFE: +84.37% | MAE: -1.53 % | Ganó Primero: NO (Retroceso)
+[LONG] GPSUSDT    | MFE: +00.08% | MAE: -5.86 % | Ganó Primero: SI
+[LONG] RIFUSDT    | MFE: +04.15% | MAE: -7.29 % | Ganó Primero: SI
+[LONG] SOMIUSDT   | MFE: +106.28% | MAE: -0.25 % | Ganó Primero: NO (Retroceso)
+[LONG] ACEUSDT    | MFE: +05.33% | MAE: -0.33 % | Ganó Primero: NO (Retroceso)
+[LONG] 0GUSDT     | MFE: +11.96% | MAE: -8.23 % | Ganó Primero: SI
+[LONG] LIGHTUSDT  | MFE: +23.22% | MAE: -1.18 % | Ganó Primero: NO (Retroceso)
+[LONG] WCTUSDT    | MFE: +30.61% | MAE: -0.50 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-01-25
+========================================
+[LONG] NOMUSDT    | MFE: +31.04% | MAE: -16.98% | Ganó Primero: SI
+[LONG] AVNTUSDT   | MFE: +13.88% | MAE: -9.31 % | Ganó Primero: SI
+[LONG] INITUSDT   | MFE: +06.79% | MAE: -10.39% | Ganó Primero: SI
+[LONG] ZKCUSDT    | MFE: +62.12% | MAE: -1.44 % | Ganó Primero: NO (Retroceso)
+[LONG] GUSDT      | MFE: +12.15% | MAE: -24.88% | Ganó Primero: SI
+[SHORT] BLESSUSDT  | MFE: +12.38% | MAE: -0.97 % | Ganó Primero: NO (Retroceso)
+[SHORT] XPLUSDT    | MFE: +10.53% | MAE: -0.63 % | Ganó Primero: NO (Retroceso)
+[SHORT] STABLEUSDT | MFE: +00.25% | MAE: -7.86 % | Ganó Primero: SI
+[SHORT] WUSDT      | MFE: +08.82% | MAE: -1.34 % | Ganó Primero: NO (Retroceso)
+[SHORT] ELSAUSDT   | MFE: +08.89% | MAE: -5.91 % | Ganó Primero: NO (Retroceso)
+[SHORT] KERNELUSDT | MFE: +07.68% | MAE: -4.81 % | Ganó Primero: NO (Retroceso)
+[SHORT] ZKUSDT     | MFE: +07.33% | MAE: -0.88 % | Ganó Primero: NO (Retroceso)
+[SHORT] MEMEUSDT   | MFE: +08.10% | MAE: -1.43 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-01-26
+========================================
+[SHORT] UBUSDT     | MFE: +05.04% | MAE: -2.34 % | Ganó Primero: NO (Retroceso)
+[LONG] NXPCUSDT   | MFE: +02.41% | MAE: -2.36 % | Ganó Primero: NO (Retroceso)
+[LONG] COLLECTUSDT | MFE: +02.86% | MAE: -33.28% | Ganó Primero: SI
+[LONG] IPUSDT     | MFE: +00.00% | MAE: -9.85 % | Ganó Primero: SI
+[LONG] AEROUSDT   | MFE: +00.83% | MAE: -2.44 % | Ganó Primero: SI
+[LONG] RESOLVUSDT | MFE: +36.40% | MAE: -0.07 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-01-27
+========================================
+[SHORT] AXLUSDT    | MFE: +02.90% | MAE: -22.71% | Ganó Primero: NO (Retroceso)
+[LONG] SANDUSDT   | MFE: +00.24% | MAE: -8.67 % | Ganó Primero: SI
+[LONG] MANAUSDT   | MFE: +00.83% | MAE: -5.85 % | Ganó Primero: SI
+[LONG] STABLEUSDT | MFE: +06.80% | MAE: -2.12 % | Ganó Primero: NO (Retroceso)
+[LONG] 2ZUSDT     | MFE: +00.00% | MAE: -5.65 % | Ganó Primero: SI
+[LONG] DUSKUSDT   | MFE: +01.78% | MAE: -16.13% | Ganó Primero: SI
+[LONG] USELESSUSDT | MFE: +11.49% | MAE: -0.82 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-01-28
+========================================
+[SHORT] AVNTUSDT   | MFE: +04.90% | MAE: -9.22 % | Ganó Primero: NO (Retroceso)
+[LONG] LYNUSDT    | MFE: +00.10% | MAE: -17.09% | Ganó Primero: SI
+[LONG] YBUSDT     | MFE: +01.68% | MAE: -4.86 % | Ganó Primero: SI
+[LONG] IPUSDT     | MFE: +01.14% | MAE: -8.76 % | Ganó Primero: SI
+[LONG] PIEVERSEUSDT | MFE: +06.16% | MAE: -10.80% | Ganó Primero: SI
+[LONG] BEATUSDT   | MFE: +05.65% | MAE: -12.28% | Ganó Primero: SI
+[LONG] FOGOUSDT   | MFE: +18.04% | MAE: -2.64 % | Ganó Primero: SI
+[SHORT] GUNUSDT    | MFE: +02.06% | MAE: -3.72 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-01-29
+========================================
+[SHORT] QUSDT      | MFE: +40.45% | MAE: -7.87 % | Ganó Primero: NO (Retroceso)
+[SHORT] LINEAUSDT  | MFE: +06.38% | MAE: -2.18 % | Ganó Primero: NO (Retroceso)
+[SHORT] PUMPUSDT   | MFE: +10.10% | MAE: -2.38 % | Ganó Primero: NO (Retroceso)
+[LONG] KAITOUSDT  | MFE: +00.85% | MAE: -11.28% | Ganó Primero: SI
+[LONG] BULLAUSDT  | MFE: +185.59% | MAE: -12.81% | Ganó Primero: NO (Retroceso)
+[SHORT] ALLOUSDT   | MFE: +13.70% | MAE: -0.46 % | Ganó Primero: NO (Retroceso)
+[LONG] RIVERUSDT  | MFE: +14.05% | MAE: -14.63% | Ganó Primero: SI
+
+========================================
+📅 DÍA: 2026-01-30
+========================================
+[SHORT] FARTCOINUSDT | MFE: +03.82% | MAE: -4.57 % | Ganó Primero: SI
+[SHORT] AAVEUSDT   | MFE: +06.03% | MAE: -0.25 % | Ganó Primero: NO (Retroceso)
+[SHORT] ADAUSDT    | MFE: +03.37% | MAE: -1.53 % | Ganó Primero: SI
+[SHORT] BCHUSDT    | MFE: +01.65% | MAE: -3.20 % | Ganó Primero: SI
+[SHORT] BTCUSDT    | MFE: +01.60% | MAE: -2.63 % | Ganó Primero: SI
+[SHORT] CAKEUSDT   | MFE: +04.27% | MAE: -0.27 % | Ganó Primero: NO (Retroceso)
+[SHORT] DYDXUSDT   | MFE: +03.95% | MAE: -1.97 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-01-31
+========================================
+[LONG] ZAMAUSDT   | MFE: +04.72% | MAE: -11.80% | Ganó Primero: SI
+[SHORT] AUCTIONUSDT | MFE: +18.61% | MAE: -0.12 % | Ganó Primero: NO (Retroceso)
+[SHORT] WCTUSDT    | MFE: +20.82% | MAE: -0.11 % | Ganó Primero: NO (Retroceso)
+[SHORT] ENSOUSDT   | MFE: +29.87% | MAE: -4.75 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-01
+========================================
+[LONG] ZKUSDT     | MFE: +27.74% | MAE: -0.36 % | Ganó Primero: NO (Retroceso)
+[LONG] ZORAUSDT   | MFE: +57.37% | MAE: -8.73 % | Ganó Primero: SI
+[LONG] ZKPUSDT    | MFE: +17.27% | MAE: -28.97% | Ganó Primero: SI
+[LONG] ZKCUSDT    | MFE: +00.88% | MAE: -17.14% | Ganó Primero: SI
+[LONG] ZBTUSDT    | MFE: +17.95% | MAE: -10.13% | Ganó Primero: SI
+[LONG] ZAMAUSDT   | MFE: +00.65% | MAE: -7.76 % | Ganó Primero: SI
+[SHORT] NOMUSDT    | MFE: +07.27% | MAE: -5.13 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-02
+========================================
+[SHORT] AEROUSDT   | MFE: +04.93% | MAE: -5.63 % | Ganó Primero: SI
+[SHORT] ALICEUSDT  | MFE: +06.72% | MAE: -2.24 % | Ganó Primero: SI
+[LONG] POLUSDT    | MFE: +10.27% | MAE: -6.46 % | Ganó Primero: NO (Retroceso)
+[SHORT] AVNTUSDT   | MFE: +04.72% | MAE: -1.86 % | Ganó Primero: SI
+[SHORT] ESPORTSUSDT | MFE: +09.24% | MAE: -0.22 % | Ganó Primero: NO (Retroceso)
+[SHORT] IPUSDT     | MFE: +08.16% | MAE: -3.37 % | Ganó Primero: SI
+[LONG] POWERUSDT  | MFE: +00.79% | MAE: -6.06 % | Ganó Primero: SI
+
+========================================
+📅 DÍA: 2026-02-03
+========================================
+[LONG] STXUSDT    | MFE: +07.52% | MAE: -4.85 % | Ganó Primero: NO (Retroceso)
+[SHORT] AXLUSDT    | MFE: +07.84% | MAE: -9.50 % | Ganó Primero: NO (Retroceso)
+[SHORT] ESPORTSUSDT | MFE: +03.26% | MAE: -3.76 % | Ganó Primero: SI
+[SHORT] GUSDT      | MFE: +07.14% | MAE: -23.74% | Ganó Primero: SI
+
+========================================
+📅 DÍA: 2026-02-04
+========================================
+[LONG] NOMUSDT    | MFE: +01.12% | MAE: -7.02 % | Ganó Primero: SI
+[SHORT] MYXUSDT    | MFE: +07.18% | MAE: -2.52 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-05
+========================================
+[SHORT] RIFUSDT    | MFE: +13.55% | MAE: -4.28 % | Ganó Primero: NO (Retroceso)
+[SHORT] OPENUSDT   | MFE: +18.33% | MAE: -2.57 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-06
+========================================
+[LONG] HYPEUSDT   | MFE: +01.37% | MAE: -13.27% | Ganó Primero: SI
+[LONG] POWERUSDT  | MFE: +05.60% | MAE: -3.90 % | Ganó Primero: SI
+[LONG] XPTUSDT    | MFE: +11.83% | MAE: -0.61 % | Ganó Primero: NO (Retroceso)
+[SHORT] PIEVERSEUSDT | MFE: +03.43% | MAE: -22.71% | Ganó Primero: SI
+[SHORT] ZKUSDT     | MFE: +05.85% | MAE: -5.72 % | Ganó Primero: SI
+[SHORT] COLLECTUSDT | MFE: +04.61% | MAE: -18.56% | Ganó Primero: SI
+[LONG] XPDUSDT    | MFE: +06.70% | MAE: -0.85 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-07
+========================================
+[LONG] LAUSDT     | MFE: +38.08% | MAE: -3.75 % | Ganó Primero: NO (Retroceso)
+[LONG] HUSDT      | MFE: +12.40% | MAE: -7.57 % | Ganó Primero: SI
+[LONG] SOMIUSDT   | MFE: +11.14% | MAE: -9.69 % | Ganó Primero: SI
+[SHORT] INUSDT     | MFE: +05.27% | MAE: -4.39 % | Ganó Primero: SI
+[LONG] FIGHTUSDT  | MFE: +10.80% | MAE: -10.87% | Ganó Primero: NO (Retroceso)
+[LONG] YALAUSDT   | MFE: +15.44% | MAE: -9.45 % | Ganó Primero: SI
+[SHORT] STABLEUSDT | MFE: +12.60% | MAE: -2.41 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-08
+========================================
+[LONG] DUSKUSDT   | MFE: +50.65% | MAE: -0.70 % | Ganó Primero: NO (Retroceso)
+[LONG] MUBARAKUSDT | MFE: +01.56% | MAE: -7.95 % | Ganó Primero: SI
+[LONG] ASTERUSDT  | MFE: +14.35% | MAE: -1.56 % | Ganó Primero: NO (Retroceso)
+[LONG] SENTUSDT   | MFE: +00.81% | MAE: -8.88 % | Ganó Primero: SI
+[LONG] PUMPUSDT   | MFE: +03.14% | MAE: -2.91 % | Ganó Primero: SI
+[SHORT] FHEUSDT    | MFE: +12.40% | MAE: -18.93% | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-09
+========================================
+[SHORT] XPTUSDT    | MFE: +01.19% | MAE: -3.85 % | Ganó Primero: SI
+[SHORT] AXSUSDT    | MFE: +00.46% | MAE: -20.11% | Ganó Primero: SI
+[SHORT] 1000FLOKIUSDT | MFE: +03.86% | MAE: -1.75 % | Ganó Primero: SI
+[SHORT] ETHUSDT    | MFE: +02.99% | MAE: -3.78 % | Ganó Primero: SI
+[SHORT] GUSDT      | MFE: +04.13% | MAE: -15.91% | Ganó Primero: SI
+[SHORT] MONUSDT    | MFE: +04.18% | MAE: -3.51 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-10
+========================================
+[LONG] STABLEUSDT | MFE: +10.04% | MAE: -6.76 % | Ganó Primero: NO (Retroceso)
+[LONG] AXLUSDT    | MFE: +01.16% | MAE: -5.53 % | Ganó Primero: SI
+[LONG] IPUSDT     | MFE: +00.47% | MAE: -10.97% | Ganó Primero: SI
+[LONG] XNYUSDT    | MFE: +25.15% | MAE: -2.55 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-11
+========================================
+[LONG] FUSDT      | MFE: +02.24% | MAE: -4.11 % | Ganó Primero: NO (Retroceso)
+[LONG] KASUSDT    | MFE: +03.99% | MAE: -3.70 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-01-23
+========================================
+[LONG] RIFUSDT    | MFE: +00.69% | MAE: -5.90 % | Ganó Primero: SI
+[LONG] FILUSDT    | MFE: +02.24% | MAE: -3.29 % | Ganó Primero: SI
+[SHORT] KAITOUSDT  | MFE: +06.62% | MAE: -4.58 % | Ganó Primero: NO (Retroceso)
+[LONG] KERNELUSDT | MFE: +08.33% | MAE: -0.77 % | Ganó Primero: NO (Retroceso)
+[LONG] RENDERUSDT | MFE: +01.78% | MAE: -4.05 % | Ganó Primero: SI
+[LONG] THETAUSDT  | MFE: +01.91% | MAE: -4.91 % | Ganó Primero: SI
+[LONG] BIOUSDT    | MFE: +01.55% | MAE: -11.93% | Ganó Primero: SI
+[LONG] GALAUSDT   | MFE: +02.15% | MAE: -4.15 % | Ganó Primero: SI
+[LONG] LIGHTUSDT  | MFE: +01.15% | MAE: -6.66 % | Ganó Primero: SI
+[LONG] SUSHIUSDT  | MFE: +01.42% | MAE: -3.83 % | Ganó Primero: SI
+[SHORT] AXSUSDT    | MFE: +12.36% | MAE: -5.44 % | Ganó Primero: SI
+[LONG] ARCUSDT    | MFE: +07.41% | MAE: -6.00 % | Ganó Primero: SI
+[LONG] MANAUSDT   | MFE: +06.56% | MAE: -8.48 % | Ganó Primero: SI
+[LONG] SYRUPUSDT  | MFE: +00.74% | MAE: -4.63 % | Ganó Primero: SI
+
+========================================
+📅 DÍA: 2026-01-24
+========================================
+[SHORT] 42USDT     | MFE: +00.79% | MAE: -3.66 % | Ganó Primero: NO (Retroceso)
+[LONG] ENSOUSDT   | MFE: +126.74% | MAE: -3.07 % | Ganó Primero: NO (Retroceso)
+[LONG] PARTIUSDT  | MFE: +02.05% | MAE: -1.53 % | Ganó Primero: SI
+[LONG] OPENUSDT   | MFE: +15.67% | MAE: -0.79 % | Ganó Primero: NO (Retroceso)
+[LONG] NOMUSDT    | MFE: +84.37% | MAE: -1.53 % | Ganó Primero: NO (Retroceso)
+[LONG] GPSUSDT    | MFE: +00.08% | MAE: -5.86 % | Ganó Primero: SI
+[LONG] RIFUSDT    | MFE: +04.15% | MAE: -7.29 % | Ganó Primero: SI
+[LONG] SOMIUSDT   | MFE: +106.28% | MAE: -0.25 % | Ganó Primero: NO (Retroceso)
+[LONG] ACEUSDT    | MFE: +05.33% | MAE: -0.33 % | Ganó Primero: NO (Retroceso)
+[LONG] 0GUSDT     | MFE: +11.96% | MAE: -8.23 % | Ganó Primero: SI
+[LONG] LIGHTUSDT  | MFE: +23.22% | MAE: -1.18 % | Ganó Primero: NO (Retroceso)
+[LONG] WCTUSDT    | MFE: +30.61% | MAE: -0.50 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-01-25
+========================================
+[LONG] NOMUSDT    | MFE: +31.04% | MAE: -16.98% | Ganó Primero: SI
+[LONG] AVNTUSDT   | MFE: +13.88% | MAE: -9.31 % | Ganó Primero: SI
+[LONG] INITUSDT   | MFE: +06.79% | MAE: -10.39% | Ganó Primero: SI
+[LONG] ZKCUSDT    | MFE: +62.12% | MAE: -1.44 % | Ganó Primero: NO (Retroceso)
+[LONG] GUSDT      | MFE: +12.15% | MAE: -24.88% | Ganó Primero: SI
+[SHORT] BLESSUSDT  | MFE: +12.38% | MAE: -0.97 % | Ganó Primero: NO (Retroceso)
+[SHORT] XPLUSDT    | MFE: +10.53% | MAE: -0.63 % | Ganó Primero: NO (Retroceso)
+[SHORT] STABLEUSDT | MFE: +00.25% | MAE: -7.86 % | Ganó Primero: SI
+[SHORT] WUSDT      | MFE: +08.82% | MAE: -1.34 % | Ganó Primero: NO (Retroceso)
+[SHORT] ELSAUSDT   | MFE: +08.89% | MAE: -5.91 % | Ganó Primero: NO (Retroceso)
+[SHORT] KERNELUSDT | MFE: +07.68% | MAE: -4.81 % | Ganó Primero: NO (Retroceso)
+[SHORT] ZKUSDT     | MFE: +07.33% | MAE: -0.88 % | Ganó Primero: NO (Retroceso)
+[SHORT] MEMEUSDT   | MFE: +08.10% | MAE: -1.43 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-01-26
+========================================
+[SHORT] UBUSDT     | MFE: +05.04% | MAE: -2.34 % | Ganó Primero: NO (Retroceso)
+[LONG] NXPCUSDT   | MFE: +02.41% | MAE: -2.36 % | Ganó Primero: NO (Retroceso)
+[LONG] COLLECTUSDT | MFE: +02.86% | MAE: -33.28% | Ganó Primero: SI
+[LONG] IPUSDT     | MFE: +00.00% | MAE: -9.85 % | Ganó Primero: SI
+[LONG] AEROUSDT   | MFE: +00.83% | MAE: -2.44 % | Ganó Primero: SI
+[LONG] RESOLVUSDT | MFE: +36.40% | MAE: -0.07 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-01-27
+========================================
+[SHORT] AXLUSDT    | MFE: +02.90% | MAE: -22.71% | Ganó Primero: NO (Retroceso)
+[LONG] SANDUSDT   | MFE: +00.24% | MAE: -8.67 % | Ganó Primero: SI
+[LONG] MANAUSDT   | MFE: +00.83% | MAE: -5.85 % | Ganó Primero: SI
+[LONG] STABLEUSDT | MFE: +06.80% | MAE: -2.12 % | Ganó Primero: NO (Retroceso)
+[LONG] 2ZUSDT     | MFE: +00.00% | MAE: -5.65 % | Ganó Primero: SI
+[LONG] DUSKUSDT   | MFE: +01.78% | MAE: -16.13% | Ganó Primero: SI
+[LONG] USELESSUSDT | MFE: +11.49% | MAE: -0.82 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-01-28
+========================================
+[SHORT] AVNTUSDT   | MFE: +04.90% | MAE: -9.22 % | Ganó Primero: NO (Retroceso)
+[LONG] LYNUSDT    | MFE: +00.10% | MAE: -17.09% | Ganó Primero: SI
+[LONG] YBUSDT     | MFE: +01.68% | MAE: -4.86 % | Ganó Primero: SI
+[LONG] IPUSDT     | MFE: +01.14% | MAE: -8.76 % | Ganó Primero: SI
+[LONG] PIEVERSEUSDT | MFE: +06.16% | MAE: -10.80% | Ganó Primero: SI
+[LONG] BEATUSDT   | MFE: +05.65% | MAE: -12.28% | Ganó Primero: SI
+[LONG] FOGOUSDT   | MFE: +18.04% | MAE: -2.64 % | Ganó Primero: SI
+[SHORT] GUNUSDT    | MFE: +02.06% | MAE: -3.72 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-01-29
+========================================
+[SHORT] QUSDT      | MFE: +40.45% | MAE: -7.87 % | Ganó Primero: NO (Retroceso)
+[SHORT] LINEAUSDT  | MFE: +06.38% | MAE: -2.18 % | Ganó Primero: NO (Retroceso)
+[SHORT] PUMPUSDT   | MFE: +10.10% | MAE: -2.38 % | Ganó Primero: NO (Retroceso)
+[LONG] KAITOUSDT  | MFE: +00.85% | MAE: -11.28% | Ganó Primero: SI
+[LONG] BULLAUSDT  | MFE: +185.59% | MAE: -12.81% | Ganó Primero: NO (Retroceso)
+[SHORT] ALLOUSDT   | MFE: +13.70% | MAE: -0.46 % | Ganó Primero: NO (Retroceso)
+[LONG] RIVERUSDT  | MFE: +14.05% | MAE: -14.63% | Ganó Primero: SI
+
+========================================
+📅 DÍA: 2026-01-30
+========================================
+[SHORT] FARTCOINUSDT | MFE: +03.82% | MAE: -4.57 % | Ganó Primero: SI
+[SHORT] AAVEUSDT   | MFE: +06.03% | MAE: -0.25 % | Ganó Primero: NO (Retroceso)
+[SHORT] ADAUSDT    | MFE: +03.37% | MAE: -1.53 % | Ganó Primero: SI
+[SHORT] BCHUSDT    | MFE: +01.65% | MAE: -3.20 % | Ganó Primero: SI
+[SHORT] BTCUSDT    | MFE: +01.60% | MAE: -2.63 % | Ganó Primero: SI
+[SHORT] CAKEUSDT   | MFE: +04.27% | MAE: -0.27 % | Ganó Primero: NO (Retroceso)
+[SHORT] DYDXUSDT   | MFE: +03.95% | MAE: -1.97 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-01-31
+========================================
+[LONG] ZAMAUSDT   | MFE: +04.72% | MAE: -11.80% | Ganó Primero: SI
+[SHORT] AUCTIONUSDT | MFE: +18.61% | MAE: -0.12 % | Ganó Primero: NO (Retroceso)
+[SHORT] WCTUSDT    | MFE: +20.82% | MAE: -0.11 % | Ganó Primero: NO (Retroceso)
+[SHORT] ENSOUSDT   | MFE: +29.87% | MAE: -4.75 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-01
+========================================
+[LONG] ZKUSDT     | MFE: +27.74% | MAE: -0.36 % | Ganó Primero: NO (Retroceso)
+[LONG] ZORAUSDT   | MFE: +57.37% | MAE: -8.73 % | Ganó Primero: SI
+[LONG] ZKPUSDT    | MFE: +17.27% | MAE: -28.97% | Ganó Primero: SI
+[LONG] ZKCUSDT    | MFE: +00.88% | MAE: -17.14% | Ganó Primero: SI
+[LONG] ZBTUSDT    | MFE: +17.95% | MAE: -10.13% | Ganó Primero: SI
+[LONG] ZAMAUSDT   | MFE: +00.65% | MAE: -7.76 % | Ganó Primero: SI
+[SHORT] NOMUSDT    | MFE: +07.27% | MAE: -5.13 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-02
+========================================
+[SHORT] AEROUSDT   | MFE: +04.93% | MAE: -5.63 % | Ganó Primero: SI
+[SHORT] ALICEUSDT  | MFE: +06.72% | MAE: -2.24 % | Ganó Primero: SI
+[LONG] POLUSDT    | MFE: +10.27% | MAE: -6.46 % | Ganó Primero: NO (Retroceso)
+[SHORT] AVNTUSDT   | MFE: +04.72% | MAE: -1.86 % | Ganó Primero: SI
+[SHORT] ESPORTSUSDT | MFE: +09.24% | MAE: -0.22 % | Ganó Primero: NO (Retroceso)
+[SHORT] IPUSDT     | MFE: +08.16% | MAE: -3.37 % | Ganó Primero: SI
+[LONG] POWERUSDT  | MFE: +00.79% | MAE: -6.06 % | Ganó Primero: SI
+
+========================================
+📅 DÍA: 2026-02-03
+========================================
+[LONG] STXUSDT    | MFE: +07.52% | MAE: -4.85 % | Ganó Primero: NO (Retroceso)
+[SHORT] AXLUSDT    | MFE: +07.84% | MAE: -9.50 % | Ganó Primero: NO (Retroceso)
+[SHORT] ESPORTSUSDT | MFE: +03.26% | MAE: -3.76 % | Ganó Primero: SI
+[SHORT] GUSDT      | MFE: +07.14% | MAE: -23.74% | Ganó Primero: SI
+
+========================================
+📅 DÍA: 2026-02-04
+========================================
+[LONG] NOMUSDT    | MFE: +01.12% | MAE: -7.02 % | Ganó Primero: SI
+[SHORT] MYXUSDT    | MFE: +07.18% | MAE: -2.52 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-05
+========================================
+[SHORT] RIFUSDT    | MFE: +13.55% | MAE: -4.28 % | Ganó Primero: NO (Retroceso)
+[SHORT] OPENUSDT   | MFE: +18.33% | MAE: -2.57 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-06
+========================================
+[LONG] HYPEUSDT   | MFE: +01.37% | MAE: -13.27% | Ganó Primero: SI
+[LONG] POWERUSDT  | MFE: +05.60% | MAE: -3.90 % | Ganó Primero: SI
+[LONG] XPTUSDT    | MFE: +11.83% | MAE: -0.61 % | Ganó Primero: NO (Retroceso)
+[SHORT] PIEVERSEUSDT | MFE: +03.43% | MAE: -22.71% | Ganó Primero: SI
+[SHORT] ZKUSDT     | MFE: +05.85% | MAE: -5.72 % | Ganó Primero: SI
+[SHORT] COLLECTUSDT | MFE: +04.61% | MAE: -18.56% | Ganó Primero: SI
+[LONG] XPDUSDT    | MFE: +06.70% | MAE: -0.85 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-07
+========================================
+[LONG] LAUSDT     | MFE: +38.08% | MAE: -3.75 % | Ganó Primero: NO (Retroceso)
+[LONG] HUSDT      | MFE: +12.40% | MAE: -7.57 % | Ganó Primero: SI
+[LONG] SOMIUSDT   | MFE: +11.14% | MAE: -9.69 % | Ganó Primero: SI
+[SHORT] INUSDT     | MFE: +05.27% | MAE: -4.39 % | Ganó Primero: SI
+[LONG] FIGHTUSDT  | MFE: +10.80% | MAE: -10.87% | Ganó Primero: NO (Retroceso)
+[LONG] YALAUSDT   | MFE: +15.44% | MAE: -9.45 % | Ganó Primero: SI
+[SHORT] STABLEUSDT | MFE: +12.60% | MAE: -2.41 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-08
+========================================
+[LONG] DUSKUSDT   | MFE: +50.65% | MAE: -0.70 % | Ganó Primero: NO (Retroceso)
+[LONG] MUBARAKUSDT | MFE: +01.56% | MAE: -7.95 % | Ganó Primero: SI
+[LONG] ASTERUSDT  | MFE: +14.35% | MAE: -1.56 % | Ganó Primero: NO (Retroceso)
+[LONG] SENTUSDT   | MFE: +00.81% | MAE: -8.88 % | Ganó Primero: SI
+[LONG] PUMPUSDT   | MFE: +03.14% | MAE: -2.91 % | Ganó Primero: SI
+[SHORT] FHEUSDT    | MFE: +12.40% | MAE: -18.93% | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-09
+========================================
+[SHORT] XPTUSDT    | MFE: +01.19% | MAE: -3.85 % | Ganó Primero: SI
+[SHORT] AXSUSDT    | MFE: +00.46% | MAE: -20.11% | Ganó Primero: SI
+[SHORT] 1000FLOKIUSDT | MFE: +03.86% | MAE: -1.75 % | Ganó Primero: SI
+[SHORT] ETHUSDT    | MFE: +02.99% | MAE: -3.78 % | Ganó Primero: SI
+[SHORT] GUSDT      | MFE: +04.13% | MAE: -15.91% | Ganó Primero: SI
+[SHORT] MONUSDT    | MFE: +04.18% | MAE: -3.51 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-10
+========================================
+[LONG] STABLEUSDT | MFE: +10.04% | MAE: -6.76 % | Ganó Primero: NO (Retroceso)
+[LONG] AXLUSDT    | MFE: +01.16% | MAE: -5.53 % | Ganó Primero: SI
+[LONG] IPUSDT     | MFE: +00.47% | MAE: -10.97% | Ganó Primero: SI
+[LONG] XNYUSDT    | MFE: +25.15% | MAE: -2.55 % | Ganó Primero: NO (Retroceso)
+
+========================================
+📅 DÍA: 2026-02-11
+========================================
+[LONG] FUSDT      | MFE: +02.24% | MAE: -4.11 % | Ganó Primero: NO (Retroceso)
+[LONG] KASUSDT    | MFE: +03.99% | MAE: -3.70 % | Ganó Primero: NO (Retroceso)

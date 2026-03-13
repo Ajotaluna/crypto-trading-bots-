@@ -1,0 +1,232 @@
+
+========================================
+📅 DÍA: 2026-01-23
+========================================
+#1  [LONG] RIFUSDT    | A Favor (MFE): +00.67% | En Contra (MAE): -5.92 % | Cierre a 24H: -1.70%
+#2  [LONG] FILUSDT    | A Favor (MFE): +02.17% | En Contra (MAE): -3.36 % | Cierre a 24H: -1.94%
+#3  [SHORT] KAITOUSDT  | A Favor (MFE): +06.59% | En Contra (MAE): -4.61 % | Cierre a 24H: +4.51%
+#4  [LONG] KERNELUSDT | A Favor (MFE): +08.34% | En Contra (MAE): -0.76 % | Cierre a 24H: +4.60%
+#5  [LONG] RENDERUSDT | A Favor (MFE): +01.78% | En Contra (MAE): -4.05 % | Cierre a 24H: -3.37%
+#6  [LONG] THETAUSDT  | A Favor (MFE): +01.87% | En Contra (MAE): -4.94 % | Cierre a 24H: -3.94%
+#7  [LONG] BIOUSDT    | A Favor (MFE): +01.55% | En Contra (MAE): -11.93% | Cierre a 24H: -11.05%
+#8  [LONG] GALAUSDT   | A Favor (MFE): +02.00% | En Contra (MAE): -4.30 % | Cierre a 24H: -2.92%
+#9  [LONG] LIGHTUSDT  | A Favor (MFE): +01.15% | En Contra (MAE): -6.66 % | Cierre a 24H: -2.35%
+#10 [LONG] SUSHIUSDT  | A Favor (MFE): +01.38% | En Contra (MAE): -3.86 % | Cierre a 24H: -2.35%
+
+========================================
+📅 DÍA: 2026-01-24
+========================================
+#1  [SHORT] 42USDT     | A Favor (MFE): +00.84% | En Contra (MAE): -3.61 % | Cierre a 24H: -1.36%
+#2  [LONG] ENSOUSDT   | A Favor (MFE): +126.74% | En Contra (MAE): -3.07 % | Cierre a 24H: +108.16%
+#3  [LONG] PARTIUSDT  | A Favor (MFE): +02.07% | En Contra (MAE): -1.51 % | Cierre a 24H: -0.45%
+#4  [LONG] OPENUSDT   | A Favor (MFE): +15.67% | En Contra (MAE): -0.79 % | Cierre a 24H: +5.89%
+#5  [LONG] NOMUSDT    | A Favor (MFE): +84.42% | En Contra (MAE): -1.50 % | Cierre a 24H: +82.19%
+#6  [LONG] GPSUSDT    | A Favor (MFE): +00.09% | En Contra (MAE): -5.84 % | Cierre a 24H: -1.79%
+#7  [LONG] RIFUSDT    | A Favor (MFE): +04.36% | En Contra (MAE): -7.11 % | Cierre a 24H: -5.48%
+#8  [LONG] SOMIUSDT   | A Favor (MFE): +106.28% | En Contra (MAE): -0.25 % | Cierre a 24H: +77.66%
+#9  [LONG] ACEUSDT    | A Favor (MFE): +05.38% | En Contra (MAE): -0.29 % | Cierre a 24H: +1.54%
+#10 [LONG] 0GUSDT     | A Favor (MFE): +11.97% | En Contra (MAE): -8.22 % | Cierre a 24H: -7.84%
+
+========================================
+📅 DÍA: 2026-01-25
+========================================
+#1  [LONG] NOMUSDT    | A Favor (MFE): +31.06% | En Contra (MAE): -16.97% | Cierre a 24H: -14.02%
+#2  [LONG] AVNTUSDT   | A Favor (MFE): +13.95% | En Contra (MAE): -9.26 % | Cierre a 24H: -7.08%
+#3  [LONG] INITUSDT   | A Favor (MFE): +06.90% | En Contra (MAE): -10.30% | Cierre a 24H: -7.83%
+#4  [LONG] ZKCUSDT    | A Favor (MFE): +61.98% | En Contra (MAE): -1.52 % | Cierre a 24H: +9.06%
+#5  [LONG] GUSDT      | A Favor (MFE): +12.26% | En Contra (MAE): -24.80% | Cierre a 24H: -22.69%
+#6  [SHORT] BLESSUSDT  | A Favor (MFE): +12.38% | En Contra (MAE): -0.97 % | Cierre a 24H: +7.04%
+#7  [SHORT] XPLUSDT    | A Favor (MFE): +10.53% | En Contra (MAE): -0.63 % | Cierre a 24H: +4.79%
+#8  [SHORT] STABLEUSDT | A Favor (MFE): +00.25% | En Contra (MAE): -7.86 % | Cierre a 24H: -4.77%
+#9  [SHORT] WUSDT      | A Favor (MFE): +08.82% | En Contra (MAE): -1.34 % | Cierre a 24H: +2.61%
+#10 [SHORT] ELSAUSDT   | A Favor (MFE): +08.89% | En Contra (MAE): -5.91 % | Cierre a 24H: +5.46%
+
+========================================
+📅 DÍA: 2026-01-26
+========================================
+#1  [SHORT] UBUSDT     | A Favor (MFE): +04.99% | En Contra (MAE): -2.40 % | Cierre a 24H: +2.73%
+#2  [LONG] NXPCUSDT   | A Favor (MFE): +02.38% | En Contra (MAE): -2.38 % | Cierre a 24H: +0.43%
+#3  [LONG] COLLECTUSDT | A Favor (MFE): +02.86% | En Contra (MAE): -33.28% | Cierre a 24H: -6.41%
+#4  [LONG] IPUSDT     | A Favor (MFE): +00.00% | En Contra (MAE): -9.85 % | Cierre a 24H: -6.72%
+#5  [LONG] AEROUSDT   | A Favor (MFE): +00.86% | En Contra (MAE): -2.41 % | Cierre a 24H: -0.81%
+#6  [LONG] RESOLVUSDT | A Favor (MFE): +36.40% | En Contra (MAE): -0.07 % | Cierre a 24H: +16.39%
+
+========================================
+📅 DÍA: 2026-01-27
+========================================
+#1  [SHORT] AXLUSDT    | A Favor (MFE): +02.90% | En Contra (MAE): -22.71% | Cierre a 24H: +1.51%
+#2  [LONG] SANDUSDT   | A Favor (MFE): +00.24% | En Contra (MAE): -8.67 % | Cierre a 24H: -7.01%
+#3  [LONG] MANAUSDT   | A Favor (MFE): +00.83% | En Contra (MAE): -5.85 % | Cierre a 24H: -4.27%
+#4  [LONG] STABLEUSDT | A Favor (MFE): +06.81% | En Contra (MAE): -2.12 % | Cierre a 24H: +3.13%
+#5  [LONG] 2ZUSDT     | A Favor (MFE): +00.00% | En Contra (MAE): -5.65 % | Cierre a 24H: -2.05%
+#6  [LONG] DUSKUSDT   | A Favor (MFE): +01.79% | En Contra (MAE): -16.12% | Cierre a 24H: -13.89%
+#7  [LONG] USELESSUSDT | A Favor (MFE): +11.49% | En Contra (MAE): -0.82 % | Cierre a 24H: +5.24%
+
+========================================
+📅 DÍA: 2026-01-28
+========================================
+#1  [SHORT] AVNTUSDT   | A Favor (MFE): +04.84% | En Contra (MAE): -9.29 % | Cierre a 24H: +4.49%
+#2  [LONG] LYNUSDT    | A Favor (MFE): +00.14% | En Contra (MAE): -17.05% | Cierre a 24H: -10.91%
+#3  [LONG] YBUSDT     | A Favor (MFE): +01.72% | En Contra (MAE): -4.82 % | Cierre a 24H: -3.92%
+#4  [LONG] IPUSDT     | A Favor (MFE): +01.18% | En Contra (MAE): -8.72 % | Cierre a 24H: -3.82%
+#5  [LONG] PIEVERSEUSDT | A Favor (MFE): +06.14% | En Contra (MAE): -10.81% | Cierre a 24H: -7.06%
+#6  [LONG] BEATUSDT   | A Favor (MFE): +05.73% | En Contra (MAE): -12.21% | Cierre a 24H: -9.31%
+#7  [LONG] FOGOUSDT   | A Favor (MFE): +18.04% | En Contra (MAE): -2.64 % | Cierre a 24H: -2.47%
+#8  [SHORT] GUNUSDT    | A Favor (MFE): +02.03% | En Contra (MAE): -3.76 % | Cierre a 24H: -1.43%
+
+========================================
+📅 DÍA: 2026-01-29
+========================================
+#1  [SHORT] QUSDT      | A Favor (MFE): +40.51% | En Contra (MAE): -7.76 % | Cierre a 24H: +22.44%
+#2  [SHORT] LINEAUSDT  | A Favor (MFE): +06.38% | En Contra (MAE): -2.18 % | Cierre a 24H: +3.02%
+#3  [SHORT] PUMPUSDT   | A Favor (MFE): +10.10% | En Contra (MAE): -2.38 % | Cierre a 24H: +7.55%
+#4  [LONG] KAITOUSDT  | A Favor (MFE): +00.85% | En Contra (MAE): -11.28% | Cierre a 24H: -9.12%
+#5  [LONG] BULLAUSDT  | A Favor (MFE): +185.59% | En Contra (MAE): -12.81% | Cierre a 24H: +131.72%
+#6  [SHORT] ALLOUSDT   | A Favor (MFE): +13.70% | En Contra (MAE): -0.46 % | Cierre a 24H: +8.59%
+#7  [LONG] RIVERUSDT  | A Favor (MFE): +14.06% | En Contra (MAE): -14.62% | Cierre a 24H: -5.90%
+
+========================================
+📅 DÍA: 2026-01-30
+========================================
+#1  [SHORT] FARTCOINUSDT | A Favor (MFE): +03.86% | En Contra (MAE): -4.53 % | Cierre a 24H: -0.75%
+#2  [SHORT] AAVEUSDT   | A Favor (MFE): +06.02% | En Contra (MAE): -0.26 % | Cierre a 24H: +4.30%
+#3  [SHORT] ADAUSDT    | A Favor (MFE): +03.37% | En Contra (MAE): -1.53 % | Cierre a 24H: +1.78%
+#4  [SHORT] BCHUSDT    | A Favor (MFE): +01.65% | En Contra (MAE): -3.20 % | Cierre a 24H: -1.69%
+#5  [SHORT] BTCUSDT    | A Favor (MFE): +01.60% | En Contra (MAE): -2.63 % | Cierre a 24H: -1.86%
+#6  [SHORT] CAKEUSDT   | A Favor (MFE): +04.27% | En Contra (MAE): -0.27 % | Cierre a 24H: +1.43%
+#7  [SHORT] DYDXUSDT   | A Favor (MFE): +03.95% | En Contra (MAE): -1.97 % | Cierre a 24H: +3.29%
+#8  [SHORT] EGLDUSDT   | A Favor (MFE): +03.50% | En Contra (MAE): -0.57 % | Cierre a 24H: +0.90%
+#9  [SHORT] ENSUSDT    | A Favor (MFE): +03.43% | En Contra (MAE): -1.64 % | Cierre a 24H: +1.25%
+#10 [SHORT] ETHFIUSDT  | A Favor (MFE): +05.60% | En Contra (MAE): -0.48 % | Cierre a 24H: +1.79%
+
+========================================
+📅 DÍA: 2026-01-31
+========================================
+#1  [LONG] ZAMAUSDT   | A Favor (MFE): +04.95% | En Contra (MAE): -11.61% | Cierre a 24H: -0.22%
+#2  [SHORT] AUCTIONUSDT | A Favor (MFE): +18.60% | En Contra (MAE): -0.14 % | Cierre a 24H: +11.12%
+#3  [SHORT] WCTUSDT    | A Favor (MFE): +20.84% | En Contra (MAE): -0.10 % | Cierre a 24H: +10.47%
+#4  [SHORT] ENSOUSDT   | A Favor (MFE): +29.88% | En Contra (MAE): -4.74 % | Cierre a 24H: +28.37%
+
+========================================
+📅 DÍA: 2026-02-01
+========================================
+#1  [LONG] ZKUSDT     | A Favor (MFE): +27.74% | En Contra (MAE): -0.36 % | Cierre a 24H: +13.71%
+#2  [LONG] ZORAUSDT   | A Favor (MFE): +57.37% | En Contra (MAE): -8.73 % | Cierre a 24H: -1.45%
+#3  [LONG] ZKPUSDT    | A Favor (MFE): +17.26% | En Contra (MAE): -28.98% | Cierre a 24H: -27.17%
+#4  [LONG] ZKCUSDT    | A Favor (MFE): +00.88% | En Contra (MAE): -17.14% | Cierre a 24H: -15.64%
+#5  [LONG] ZBTUSDT    | A Favor (MFE): +18.09% | En Contra (MAE): -10.02% | Cierre a 24H: -8.68%
+#6  [LONG] ZAMAUSDT   | A Favor (MFE): +00.43% | En Contra (MAE): -7.96 % | Cierre a 24H: -4.73%
+#7  [SHORT] NOMUSDT    | A Favor (MFE): +07.28% | En Contra (MAE): -5.12 % | Cierre a 24H: +4.83%
+#8  [SHORT] SONICUSDT  | A Favor (MFE): +04.60% | En Contra (MAE): -15.68% | Cierre a 24H: -1.74%
+#9  [LONG] KITEUSDT   | A Favor (MFE): +01.95% | En Contra (MAE): -6.82 % | Cierre a 24H: -3.67%
+#10 [SHORT] ENSOUSDT   | A Favor (MFE): +11.31% | En Contra (MAE): -2.23 % | Cierre a 24H: +6.45%
+
+========================================
+📅 DÍA: 2026-02-02
+========================================
+#1  [SHORT] AEROUSDT   | A Favor (MFE): +04.93% | En Contra (MAE): -5.63 % | Cierre a 24H: -3.82%
+#2  [SHORT] ALICEUSDT  | A Favor (MFE): +06.02% | En Contra (MAE): -3.01 % | Cierre a 24H: -0.75%
+#3  [LONG] POLUSDT    | A Favor (MFE): +10.29% | En Contra (MAE): -6.45 % | Cierre a 24H: +5.92%
+#4  [SHORT] AVNTUSDT   | A Favor (MFE): +04.68% | En Contra (MAE): -1.91 % | Cierre a 24H: +0.91%
+#5  [SHORT] ESPORTSUSDT | A Favor (MFE): +09.24% | En Contra (MAE): -0.22 % | Cierre a 24H: +8.21%
+#6  [SHORT] IPUSDT     | A Favor (MFE): +08.16% | En Contra (MAE): -3.37 % | Cierre a 24H: +3.64%
+#7  [LONG] POWERUSDT  | A Favor (MFE): +00.81% | En Contra (MAE): -6.05 % | Cierre a 24H: -4.96%
+#8  [SHORT] CRVUSDT    | A Favor (MFE): +04.68% | En Contra (MAE): -5.04 % | Cierre a 24H: -3.96%
+#9  [SHORT] LINEAUSDT  | A Favor (MFE): +04.56% | En Contra (MAE): -1.05 % | Cierre a 24H: +2.35%
+
+========================================
+📅 DÍA: 2026-02-03
+========================================
+#1  [LONG] STXUSDT    | A Favor (MFE): +07.52% | En Contra (MAE): -4.85 % | Cierre a 24H: -0.36%
+#2  [SHORT] AXLUSDT    | A Favor (MFE): +07.84% | En Contra (MAE): -9.50 % | Cierre a 24H: -1.21%
+#3  [SHORT] ESPORTSUSDT | A Favor (MFE): +03.21% | En Contra (MAE): -3.80 % | Cierre a 24H: -0.58%
+#4  [SHORT] GUSDT      | A Favor (MFE): +07.17% | En Contra (MAE): -23.71% | Cierre a 24H: -17.18%
+
+========================================
+📅 DÍA: 2026-02-04
+========================================
+#1  [LONG] NOMUSDT    | A Favor (MFE): +01.07% | En Contra (MAE): -7.06 % | Cierre a 24H: -4.88%
+#2  [SHORT] MYXUSDT    | A Favor (MFE): +07.20% | En Contra (MAE): -2.50 % | Cierre a 24H: +2.95%
+
+========================================
+📅 DÍA: 2026-02-05
+========================================
+#1  [SHORT] RIFUSDT    | A Favor (MFE): +13.62% | En Contra (MAE): -4.20 % | Cierre a 24H: +5.75%
+#2  [SHORT] OPENUSDT   | A Favor (MFE): +18.33% | En Contra (MAE): -2.57 % | Cierre a 24H: +4.78%
+
+========================================
+📅 DÍA: 2026-02-06
+========================================
+#1  [LONG] HYPEUSDT   | A Favor (MFE): +01.37% | En Contra (MAE): -13.27% | Cierre a 24H: -10.97%
+#2  [LONG] POWERUSDT  | A Favor (MFE): +05.74% | En Contra (MAE): -3.78 % | Cierre a 24H: -0.83%
+#3  [LONG] XPTUSDT    | A Favor (MFE): +11.83% | En Contra (MAE): -0.61 % | Cierre a 24H: +11.15%
+#4  [SHORT] PIEVERSEUSDT | A Favor (MFE): +03.43% | En Contra (MAE): -22.71% | Cierre a 24H: -16.26%
+#5  [SHORT] ZKUSDT     | A Favor (MFE): +05.89% | En Contra (MAE): -5.67 % | Cierre a 24H: +1.19%
+#6  [SHORT] COLLECTUSDT | A Favor (MFE): +04.66% | En Contra (MAE): -18.51% | Cierre a 24H: +2.69%
+#7  [LONG] XPDUSDT    | A Favor (MFE): +06.71% | En Contra (MAE): -0.84 % | Cierre a 24H: +4.42%
+
+========================================
+📅 DÍA: 2026-02-07
+========================================
+#1  [LONG] LAUSDT     | A Favor (MFE): +38.15% | En Contra (MAE): -3.71 % | Cierre a 24H: +16.42%
+#2  [LONG] HUSDT      | A Favor (MFE): +12.43% | En Contra (MAE): -7.55 % | Cierre a 24H: -4.90%
+#3  [LONG] SOMIUSDT   | A Favor (MFE): +11.14% | En Contra (MAE): -9.69 % | Cierre a 24H: -7.72%
+#4  [SHORT] INUSDT     | A Favor (MFE): +05.25% | En Contra (MAE): -4.41 % | Cierre a 24H: +1.33%
+#5  [LONG] FIGHTUSDT  | A Favor (MFE): +10.76% | En Contra (MAE): -10.90% | Cierre a 24H: +1.57%
+#6  [LONG] YALAUSDT   | A Favor (MFE): +15.44% | En Contra (MAE): -9.45 % | Cierre a 24H: +4.80%
+#7  [SHORT] STABLEUSDT | A Favor (MFE): +12.61% | En Contra (MAE): -2.41 % | Cierre a 24H: +5.60%
+#8  [SHORT] FHEUSDT    | A Favor (MFE): +11.50% | En Contra (MAE): -1.79 % | Cierre a 24H: +8.17%
+#9  [SHORT] FOGOUSDT   | A Favor (MFE): +09.07% | En Contra (MAE): -0.16 % | Cierre a 24H: +7.48%
+#10 [LONG] JTOUSDT    | A Favor (MFE): +03.13% | En Contra (MAE): -7.79 % | Cierre a 24H: -2.09%
+
+========================================
+📅 DÍA: 2026-02-08
+========================================
+#1  [LONG] DUSKUSDT   | A Favor (MFE): +50.65% | En Contra (MAE): -0.70 % | Cierre a 24H: +27.35%
+#2  [LONG] MUBARAKUSDT | A Favor (MFE): +01.63% | En Contra (MAE): -7.89 % | Cierre a 24H: -5.98%
+#3  [LONG] ASTERUSDT  | A Favor (MFE): +14.35% | En Contra (MAE): -1.56 % | Cierre a 24H: +9.32%
+#4  [LONG] SENTUSDT   | A Favor (MFE): +00.85% | En Contra (MAE): -8.85 % | Cierre a 24H: -6.95%
+#5  [LONG] PUMPUSDT   | A Favor (MFE): +03.14% | En Contra (MAE): -2.91 % | Cierre a 24H: -1.03%
+#6  [SHORT] FHEUSDT    | A Favor (MFE): +12.41% | En Contra (MAE): -18.92% | Cierre a 24H: +5.53%
+
+========================================
+📅 DÍA: 2026-02-09
+========================================
+#1  [SHORT] XPTUSDT    | A Favor (MFE): +01.18% | En Contra (MAE): -3.86 % | Cierre a 24H: -2.35%
+#2  [SHORT] AXSUSDT    | A Favor (MFE): +00.46% | En Contra (MAE): -20.11% | Cierre a 24H: -16.31%
+#3  [SHORT] 1000FLOKIUSDT | A Favor (MFE): +03.83% | En Contra (MAE): -1.78 % | Cierre a 24H: -0.29%
+#4  [SHORT] ETHUSDT    | A Favor (MFE): +02.99% | En Contra (MAE): -3.78 % | Cierre a 24H: -2.24%
+#5  [SHORT] GUSDT      | A Favor (MFE): +04.13% | En Contra (MAE): -15.91% | Cierre a 24H: -6.58%
+#6  [SHORT] MONUSDT    | A Favor (MFE): +04.18% | En Contra (MAE): -3.51 % | Cierre a 24H: -1.28%
+#7  [SHORT] MYXUSDT    | A Favor (MFE): +03.08% | En Contra (MAE): -5.67 % | Cierre a 24H: +1.09%
+#8  [SHORT] ARKMUSDT   | A Favor (MFE): +03.81% | En Contra (MAE): -2.15 % | Cierre a 24H: -0.66%
+#9  [SHORT] LINKUSDT   | A Favor (MFE): +03.58% | En Contra (MAE): -2.76 % | Cierre a 24H: -1.09%
+#10 [SHORT] SOLUSDT    | A Favor (MFE): +04.09% | En Contra (MAE): -2.68 % | Cierre a 24H: -1.01%
+
+========================================
+📅 DÍA: 2026-02-10
+========================================
+#1  [LONG] STABLEUSDT | A Favor (MFE): +10.07% | En Contra (MAE): -6.74 % | Cierre a 24H: +1.33%
+#2  [LONG] AXLUSDT    | A Favor (MFE): +01.16% | En Contra (MAE): -5.53 % | Cierre a 24H: -4.10%
+#3  [LONG] IPUSDT     | A Favor (MFE): +00.55% | En Contra (MAE): -10.90% | Cierre a 24H: -8.63%
+#4  [LONG] XNYUSDT    | A Favor (MFE): +25.33% | En Contra (MAE): -2.41 % | Cierre a 24H: +13.12%
+#5  [LONG] DASHUSDT   | A Favor (MFE): +00.16% | En Contra (MAE): -7.61 % | Cierre a 24H: -3.97%
+#6  [LONG] XVGUSDT    | A Favor (MFE): +03.42% | En Contra (MAE): -3.44 % | Cierre a 24H: +1.54%
+#7  [LONG] ZROUSDT    | A Favor (MFE): +22.55% | En Contra (MAE): -14.09% | Cierre a 24H: +21.39%
+#8  [SHORT] MINAUSDT   | A Favor (MFE): +02.58% | En Contra (MAE): -2.58 % | Cierre a 24H: +1.06%
+#9  [LONG] APRUSDT    | A Favor (MFE): +19.21% | En Contra (MAE): -3.44 % | Cierre a 24H: +16.50%
+#10 [LONG] GPSUSDT    | A Favor (MFE): +00.88% | En Contra (MAE): -34.02% | Cierre a 24H: -23.21%
+
+========================================
+📅 DÍA: 2026-02-11
+========================================
+#1  [LONG] FUSDT      | A Favor (MFE): +02.24% | En Contra (MAE): -4.11 % | Cierre a 24H: +0.64%
+#2  [LONG] KASUSDT    | A Favor (MFE): +03.99% | En Contra (MAE): -3.70 % | Cierre a 24H: +2.72%
+#3  [LONG] OGUSDT     | A Favor (MFE): +04.38% | En Contra (MAE): -10.09% | Cierre a 24H: -7.78%
+#4  [LONG] ZBTUSDT    | A Favor (MFE): +07.48% | En Contra (MAE): -3.96 % | Cierre a 24H: +3.67%
+#5  [LONG] SONICUSDT  | A Favor (MFE): +11.53% | En Contra (MAE): -4.54 % | Cierre a 24H: +5.09%
+#6  [LONG] 0GUSDT     | A Favor (MFE): +00.79% | En Contra (MAE): -6.61 % | Cierre a 24H: +0.72%
+#7  [LONG] WCTUSDT    | A Favor (MFE): +08.03% | En Contra (MAE): -5.22 % | Cierre a 24H: +7.63%
+#8  [LONG] BLUAIUSDT  | A Favor (MFE): +10.74% | En Contra (MAE): -10.89% | Cierre a 24H: -5.10%
+#9  [LONG] ETHFIUSDT  | A Favor (MFE): +04.20% | En Contra (MAE): -3.38 % | Cierre a 24H: +3.42%
+#10 [LONG] ORDIUSDT   | A Favor (MFE): +00.69% | En Contra (MAE): -6.64 % | Cierre a 24H: -1.20%

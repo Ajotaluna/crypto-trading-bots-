@@ -46,6 +46,7 @@ from trading_strategy import (
     SCALE_LEVEL_3,
     MAX_SCALE
 )
+from telegram_notifier import alert_anomaly_scan, alert_whale_scan
 
 # Slots independientes por scanner: cada canal tiene su propio cupo
 # Total max posiciones abiertas = ANOMALY_SLOTS + WHALE_SLOTS = 6
@@ -329,6 +330,9 @@ class TrendBot:
                     logger.info(f"📡 Anomaly picks: {len(anomaly_picks)}")
                     for p in anomaly_picks[:5]:
                         logger.info(f"  [ANOMALY] {p['symbol']:12s} ({p['direction']:5s}) score={p['score']} conf={p.get('confidence','?')} | {p.get('reasons','')[:60]}")
+                        
+                    # 🚀 ENVIAR ALERTA DE ESCÁNER MACRO A TELEGRAM
+                    asyncio.create_task(asyncio.to_thread(alert_anomaly_scan, anomaly_picks))
                 else:
                     logger.warning("📡 Anomaly Scan: buffer vacío — esperando que KlineBuffer llene el historial")
                     anomaly_picks = []
@@ -380,6 +384,10 @@ class TrendBot:
             # Watcher monitorea todos pero solo MEDIUM+ con direccion entran al watchlist
             self.whale_watchlist = whale_picks_executable
             self.whale_watcher.update_pairs(whale_picks_executable)
+            
+            # 🚀 ENVIAR ALERTA DE ESCÁNER BALLENAS A TELEGRAM
+            if whale_picks_executable:
+                asyncio.create_task(asyncio.to_thread(alert_whale_scan, whale_picks_executable))
 
             # ── WATCHLIST FINAL: slots garantizados por scanner ──────────────
             # Cada scanner tiene su propia sección - NO compiten por espacio.
